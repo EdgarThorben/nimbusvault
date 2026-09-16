@@ -4,6 +4,7 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import ItemSidebar from "../../components/ItemSidebar.astro";
 import DetailsPanel from "../../components/DetailsPanel.astro";
 import RelationshipsPanel from "../../components/RelationshipsPanel.astro";
+import ImpactPanel from "../../components/ImpactPanel.astro";
 import CredentialsPanel from "../../components/CredentialsPanel.astro";
 import Badge from "../../components/Badge.astro";
 import OnboardingGuideContent from "../../components/OnboardingGuideContent.astro";
@@ -16,6 +17,7 @@ import { groupDetailsByCategory } from "../../lib/details";
 import { getMissingRequiredFields } from "../../lib/itemCompleteness";
 import { formatRelativeTime } from "../../lib/time";
 import { breadcrumbForItem } from "../../lib/breadcrumbs";
+import { getImpactGraph } from "../../lib/itemGraph";
 import { t, tItemType } from "../../lib/i18n";
 
 const lang = Astro.locals.lang;
@@ -41,6 +43,7 @@ if (
 const categories = groupDetailsByCategory(item.fields);
 const missingFields = getMissingRequiredFields(item.type, item.fields);
 const { outgoing, incoming } = await getItemRelationships(item.id);
+const impact = await getImpactGraph(item.id);
 const otherItems = (await listItems()).filter((i) => i.id !== item.id);
 const credentialItems = await getCredentialsForItem(item.id);
 const collection = await getCollectionBySlug(item.collectionSlug);
@@ -76,7 +79,10 @@ const bespokeNav: Record<string, { href: string; label: string }[]> = {
   ],
 };
 const BespokeMain = bespokeContent[item.slug];
-const pageNav = bespokeNav[item.slug] ?? [{ href: "#fields", label: t(lang, "item.fields") }];
+const pageNav = [
+  ...(bespokeNav[item.slug] ?? [{ href: "#fields", label: t(lang, "item.fields") }]),
+  { href: "#impact", label: t(lang, "item.impact") },
+];
 ---
 
 <BookStackLayout title={item.name}>
@@ -169,6 +175,12 @@ const pageNav = bespokeNav[item.slug] ?? [{ href: "#fields", label: t(lang, "ite
           </>
         )
       }
+
+      <ImpactPanel
+        dependents={impact.dependents}
+        dependencies={impact.dependencies}
+        truncated={impact.truncated}
+      />
 
       <RelationshipsPanel
         itemSlug={item.slug}

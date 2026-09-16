@@ -1414,3 +1414,211 @@ hr.thin {
   margin: 0 0 var(--space-4);
   font-size: 0.85rem;
 }
+
+/* --- Impact analysis panel ---
+   Two side-by-side rings of the dependency graph: what breaks if this item
+   dies, and what this item needs. Indentation encodes traversal depth. */
+.impact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.impact-col h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.impact-count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--gray-100);
+  color: var(--muted);
+}
+
+.impact-count--danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.impact-summary {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.impact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.impact-list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  /* --impact-depth is 0 for a direct neighbour, 1 for one hop further, ... */
+  padding-left: calc(var(--impact-depth, 0) * 1.1rem);
+}
+
+.impact-ring {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* Further from the origin = fainter, so the immediate blast radius reads first. */
+.impact-ring[data-depth="2"] { background: var(--warning); }
+.impact-ring[data-depth="3"] { background: var(--gray-400); }
+.impact-ring:not([data-depth="1"]):not([data-depth="2"]):not([data-depth="3"]) {
+  background: var(--gray-200);
+}
+
+.impact-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .impact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- AI normalization panel (item create/edit forms) --- */
+.normalize-panel {
+  margin: var(--space-2) 0 var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.normalize-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.normalize-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  flex: 1 1 14rem;
+}
+
+.normalize-panel h4 {
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.normalize-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.normalize-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.normalize-rename {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.normalize-reason {
+  flex: 1 1 12rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.badge--success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+/* --- Ingest inbox --- */
+.nav-count {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.ingest-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ingest-event {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+/* Reviewed events stay in the list as a record, but recede visually so the
+   queue still reads as a to-do list. */
+.ingest-event--applied,
+.ingest-event--rejected {
+  background: var(--bg-subtle);
+}
+
+.ingest-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ingest-body {
+  margin: var(--space-2) 0;
+}
+
+.ingest-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.ingest-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ingest-reject-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ingest-reject-form input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}

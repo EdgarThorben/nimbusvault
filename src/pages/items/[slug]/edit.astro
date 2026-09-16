@@ -2,6 +2,7 @@
 import BookStackLayout from "../../../layouts/BookStackLayout.astro";
 import Breadcrumb from "../../../components/Breadcrumb.astro";
 import DetailRowsEditor from "../../../components/DetailRowsEditor.astro";
+import NormalizationPanel from "../../../components/NormalizationPanel.astro";
 import { actions } from "astro:actions";
 import { getItemBySlug } from "../../../lib/itemQueries";
 import { t } from "../../../lib/i18n";
@@ -67,6 +68,7 @@ const breadcrumbItems = [
 
       <label>{t(lang, "item.fields")}</label>
       <DetailRowsEditor initialDetails={item.fields} fieldName="fields" />
+      <NormalizationPanel excludeSlug={item.slug} itemType={item.type} />
 
       <label>
         {t(lang, "item.editSummary")} <span style="font-weight:400;color:var(--bs-muted);">{t(lang, "item.editSummaryHint")}</span>

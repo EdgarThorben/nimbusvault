@@ -1,0 +1,209 @@
+---
+import { t } from "../lib/i18n";
+import { isNormalizationAvailable } from "../lib/fieldNormalizer";
+import type { ItemType } from "../db/schema";
+
+interface Props {
+  /** Slug of the item being edited, so it isn't flagged as its own duplicate. */
+  excludeSlug?: string;
+  /**
+   * Fallback type for forms that don't let you change it — the edit form
+   * fixes an item's type, so there's no <select> for the script to read.
+   */
+  itemType?: ItemType;
+}
+
+const { excludeSlug, itemType } = Astro.props;
+const lang = Astro.locals.lang;
+
+// Rendered only when an API key is configured — without one the button would
+// be a dead control on every form.
+const available = isNormalizationAvailable();
+---
+
+{
+  available && (
+    <div
+      class="normalize-panel"
+      data-exclude-slug={excludeSlug ?? ""}
+      data-item-type={itemType ?? ""}
+      data-label-checking={t(lang, "normalize.checking")}
+      data-label-run={t(lang, "normalize.run")}
+      data-label-clean={t(lang, "normalize.clean")}
+      data-label-apply={t(lang, "normalize.apply")}
+      data-label-applied={t(lang, "normalize.applied")}
+      data-label-duplicates={t(lang, "normalize.duplicates")}
+      data-label-suggestions={t(lang, "normalize.suggestions")}
+      data-label-failed={t(lang, "normalize.failed")}
+    >
+      <div class="normalize-head">
+        <button type="button" class="secondary-button" id="normalize-run">
+          {t(lang, "normalize.run")}
+        </button>
+        <span class="normalize-hint">{t(lang, "normalize.hint")}</span>
+      </div>
+      <div id="normalize-output" />
+    </div>
+  )
+}
+
+<script>
+  import { actions } from "astro:actions";
+
+  interface Suggestion {
+    index: number;
+    target: "label" | "category";
+    from: string;
+    to: string;
+    reason: string;
+  }
+  interface Duplicate {
+    slug: string;
+    name: string;
+    reason: string;
+  }
+
+  const panel = document.querySelector<HTMLDivElement>(".normalize-panel");
+  const runButton = document.getElementById("normalize-run") as HTMLButtonElement | null;
+  const output = document.getElementById("normalize-output");
+  const body = document.getElementById("detail-rows-body") as HTMLTableSectionElement | null;
+
+  if (panel && runButton && output && body) {
+    const text = (key: string) => panel.getAttribute(`data-label-${key}`) || key;
+    const form = panel.closest("form");
+
+    /**
+     * DetailRowsEditor drops incomplete rows when it serializes, so the
+     * indexes the server sees are positions in the *filtered* list. Building
+     * that same list here — while holding on to each row element — is what
+     * keeps a returned index pointing at the row the user is looking at.
+     */
+    function collectRows() {
+      return Array.from(body!.querySelectorAll("tr"))
+        .map((tr) => ({
+          tr,
+          category: tr.querySelector<HTMLInputElement>(".row-category")?.value.trim() ?? "",
+          label: tr.querySelector<HTMLInputElement>(".row-label")?.value.trim() ?? "",
+          value: tr.querySelector<HTMLInputElement>(".row-value")?.value.trim() ?? "",
+        }))
+        .filter((r) => r.label && r.value);
+    }
+
+    function applySuggestion(rows: ReturnType<typeof collectRows>, s: Suggestion, button: HTMLButtonElement) {
+      const row = rows[s.index];
+      if (!row) return;
+      const selector = s.target === "label" ? ".row-label" : ".row-category";
+      const input = row.tr.querySelector<HTMLInputElement>(selector);
+      if (!input) return;
+      input.value = s.to;
+      // DetailRowsEditor re-serializes on "input", so firing it is what
+      // actually gets the rename into the form's hidden field.
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      button.disabled = true;
+      button.textContent = text("applied");
+    }
+
+    function render(rows: ReturnType<typeof collectRows>, suggestions: Suggestion[], duplicates: Duplicate[]) {
+      output!.replaceChildren();
+
+      if (suggestions.length === 0 && duplicates.length === 0) {
+        const p = document.createElement("p");
+        p.className = "no-changes";
+        p.textContent = text("clean");
+        output!.appendChild(p);
+        return;
+      }
+
+      if (suggestions.length > 0) {
+        const heading = document.createElement("h4");
+        heading.textContent = text("suggestions");
+        output!.appendChild(heading);
+
+        const list = document.createElement("ul");
+        list.className = "normalize-list";
+        for (const s of suggestions) {
+          const li = document.createElement("li");
+
+          const rename = document.createElement("span");
+          rename.className = "normalize-rename";
+          // textContent throughout: these strings come back from a model and
+          // are never trusted as markup.
+          rename.textContent = `${s.from} → ${s.to}`;
+
+          const reason = document.createElement("span");
+          reason.className = "normalize-reason";
+          reason.textContent = s.reason;
+
+          const apply = document.createElement("button");
+          apply.type = "button";
+          apply.className = "secondary-button";
+          apply.textContent = text("apply");
+          apply.addEventListener("click", () => applySuggestion(rows, s, apply));
+
+          li.append(rename, reason, apply);
+          list.appendChild(li);
+        }
+        output!.appendChild(list);
+      }
+
+      if (duplicates.length > 0) {
+        const heading = document.createElement("h4");
+        heading.textContent = text("duplicates");
+        output!.appendChild(heading);
+
+        const list = document.createElement("ul");
+        list.className = "normalize-list";
+        for (const d of duplicates) {
+          const li = document.createElement("li");
+
+          const link = document.createElement("a");
+          link.href = `/items/${d.slug}`;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.textContent = d.name;
+
+          const reason = document.createElement("span");
+          reason.className = "normalize-reason";
+          reason.textContent = d.reason;
+
+          li.append(link, reason);
+          list.appendChild(li);
+        }
+        output!.appendChild(list);
+      }
+    }
+
+    runButton.addEventListener("click", async () => {
+      const rows = collectRows();
+      const type =
+        form?.querySelector<HTMLSelectElement>('select[name="type"]')?.value ||
+        panel.getAttribute("data-item-type") ||
+        "other";
+      const name = form?.querySelector<HTMLInputElement>('input[name="name"]')?.value.trim() ?? "";
+      const excludeSlug = panel.getAttribute("data-exclude-slug") || undefined;
+
+      runButton.disabled = true;
+      runButton.textContent = text("checking");
+      output!.replaceChildren();
+
+      try {
+        const { data, error } = await actions.suggestNormalization({
+          type: type as never,
+          name,
+          fields: rows.map(({ category, label, value }) => ({ category, label, value })),
+          excludeSlug,
+        });
+        if (error || !data) throw error ?? new Error("no data");
+        render(rows, data.suggestions, data.duplicates);
+      } catch {
+        const p = document.createElement("p");
+        p.className = "login-error";
+        p.textContent = text("failed");
+        output!.appendChild(p);
+      } finally {
+        runButton.disabled = false;
+        runButton.textContent = text("run");
+      }
+    });
+  }
+</script>

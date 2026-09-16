@@ -1,5 +1,5 @@
 {
-  "name": "bookstack-clone",
+  "name": "nimbusvault",
   "type": "module",
   "version": "0.0.1",
   "engines": {
@@ -15,6 +15,7 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
     "@astrojs/vercel": "^11.0.2",
     "@node-rs/argon2": "^2.0.2",
     "astro": "^7.0.7",

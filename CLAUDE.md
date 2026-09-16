@@ -13,7 +13,7 @@ Routing is fully generic — one dynamic `/items/[slug]` route serves every item
 
 ## Current state vs. gaps
 
-Built: DB-backed collections/items, login/logout, item create/edit with auto-diffed revision history, a JSONB `fields[]` array (category/label/value) per item, a directed relationship graph between items, encrypted credentials.
+Built: DB-backed collections/items, login/logout, item create/edit with auto-diffed revision history, a JSONB `fields[]` array (category/label/value) per item, a directed relationship graph between items, encrypted credentials, impact analysis (blast radius) on the item page, an AI field-normalization assistant on the item forms, and a signed webhook ingest inbox at `/ingest`.
 
 Not built — do not assume these exist: signup/registration, account settings, role-based permissions (any logged-in user can edit any item today), an edit form for collections (create exists at `/collections/new`, edit does not).
 
@@ -27,6 +27,7 @@ Not built — do not assume these exist: signup/registration, account settings, 
 
 - Schema lives in `src/db/schema.ts` (Drizzle/Postgres); migrate with `npm run db:generate` then `npm run db:migrate`.
 - The `items.fields` JSONB blob is fine for structured field/value data but is NOT a CI relationship model. Relationships live in the explicit `item_relationships` join table (`item_id`, `related_item_id`, `relationship_type`) with cycle detection in `src/lib/itemGraph.ts` — don't encode relationships as prose links inside `fields`.
+- Dependency traversal (`getImpactGraph`, `wouldCreateCycle`) is recursive-CTE-based and lives in `src/lib/itemGraph.ts`. Walks are depth-capped (`MAX_IMPACT_DEPTH`) and guard against cycles with a path array, since rows can predate the write-time cycle check. Add new graph queries there rather than reaching for a graph database.
 - Reuse the existing revision pattern (`itemRevisions`: snapshot + diffed `changes[]`) for any new versioned entity instead of inventing a second history mechanism.
 - Prefer soft-delete (`status`/`archived_at` on `items`) over hard delete, so decommissioned hardware/licenses/docs stay auditable.
 - Treat credentials/license keys as a separate, more sensitive field type — never store them in the general `fields` JSONB alongside plain fields; they have their own table (`credentials`, keyed by `item_id`) and field-level (not just item-level) access control.
@@ -41,11 +42,48 @@ Not built — do not assume these exist: signup/registration, account settings, 
 - Translated: all static UI chrome (nav, labels, buttons, empty states, breadcrumb static segments, the fixed `itemTypes`/`relationshipTypes` enum labels, and the 3 bespoke-content components' hardcoded prose — `src/components/{OnboardingGuideContent,HolidayPartyContent,OutagePlanContent}.astro`, rendered conditionally by slug from `items/[slug].astro`) and `formatRelativeTime()`.
 - **Not translated, by design:** seeded/user-entered database content — collection/item names & descriptions, item field categories/labels/values, credential labels. Translating that would mean either a dual-language content model or a live translation service, neither of which was requested. If real multi-language *content* is wanted later, that's a separate, bigger feature — don't conflate it with the UI-chrome toggle.
 - Add new UI strings to `src/lib/i18n.ts`'s `dict` (both `en` and `de` keys), then call `t(lang, "key")` — `lang` comes from `Astro.locals.lang`, available in every `.astro` file's frontmatter (including nested components) since middleware sets it per-request.
-- `DetailRowsEditor.astro` and `CredentialsPanel.astro` have client-side `<script>` blocks that need translated strings too (e.g. the "Remove"/"Reveal"/"Hide" button text) — pass them via `data-*` attributes read in the script, not `define:vars` (that strips TypeScript support from the script and breaks the existing typed code).
+- `DetailRowsEditor.astro`, `CredentialsPanel.astro`, and `NormalizationPanel.astro` have client-side `<script>` blocks that need translated strings too (e.g. the "Remove"/"Reveal"/"Hide" button text) — pass them via `data-*` attributes read in the script, not `define:vars` (that strips TypeScript support from the script and breaks the existing typed code).
+
+## Modern-CMDB tech evaluated and rejected (confirmed 2026-09-16)
+
+A "modern CMDB stack" proposal (graph database, GraphQL/Cypher, automated cloud discovery, AI reconciliation) was
+assessed against this codebase. Three parts were rejected and one was built — don't re-propose the rejected ones:
+
+- **Graph database (Neo4j et al.) — rejected.** The edge set is small (hundreds of rows) and the recursive CTEs in
+  `src/lib/itemGraph.ts` already answer dependency and blast-radius questions. A second datastore would mean dual
+  writes and losing transactional consistency with `items`/`credentials`, against the settled Vercel + Neon decision.
+  Impact queries belong in Postgres.
+- **GraphQL — rejected.** It's a transport layer, not a graph engine, and there is exactly one consumer (Astro SSR,
+  already server-side with typed Actions). Nothing outside the app queries this data.
+- **Automated cloud/Kubernetes discovery — still out of scope**, and structurally blocked: Vercel's serverless runtime
+  has no long-lived worker to poll provider APIs or hold a watch. What *was* built is the receiving half — see below.
+- **AI-assisted normalization — built** (`src/lib/fieldNormalizer.ts`), because `getMissingRequiredFields` matches
+  labels by exact string, so "Memory" instead of "RAM" silently reads as incomplete.
+
+## Webhook ingest (confirmed 2026-09-16)
+
+`POST /api/ingest` accepts HMAC-SHA256-signed payloads (`src/lib/ingestAuth.ts`, secret in `INGEST_WEBHOOK_SECRET`;
+signature covers `${timestamp}.${rawBody}`, 5-minute replay window). Deliveries land in the `ingest_events` table as
+`pending` and are reviewed by a human at `/ingest` — **nothing is ever written straight into `items`**. Applying an
+event goes through the normal revision machinery so an automated update is as auditable as a hand-typed one. Keep it
+that way: an unattended feed that silently rewrites the documentation destroys its value as a record of what's true.
+
+## AI-assisted normalization (confirmed 2026-09-16)
+
+`src/lib/fieldNormalizer.ts` asks Claude (`claude-opus-5`, low effort, JSON-schema structured output) to map draft
+field labels onto the canonical set for the item type and to flag likely duplicate items. Rules it must keep:
+
+- **Advisory only.** Suggestions are rendered with Apply buttons; nothing is rewritten automatically.
+- **Degrades to nothing.** No `ANTHROPIC_API_KEY` means the panel isn't rendered at all; an API failure returns empty
+  arrays. A flaky model API must never block a save.
+- **Re-resolve model output against real input** before it reaches the UI — a returned row index or item slug is
+  looked up in the request payload, never trusted as-is.
+- Duplicate candidates are shortlisted locally first (`shortlistDuplicateCandidates`); don't send the whole item table.
 
 ## Out of scope unless explicitly requested
 
-Network discovery/scanning, multi-tenancy, granular RBAC beyond "logged in or not", self-service signup.
+Network discovery/scanning (outbound polling/probing — the inbound webhook receiver above is the accepted path),
+multi-tenancy, granular RBAC beyond "logged in or not", self-service signup.
 
 ## Development
 

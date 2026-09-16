@@ -3,6 +3,7 @@ import "../styles/global.css";
 import { actions } from "astro:actions";
 import { site } from "../config";
 import { t } from "../lib/i18n";
+import { countPendingIngestEvents } from "../lib/ingestQueries";
 
 interface Props {
   title: string;
@@ -15,6 +16,9 @@ const lang = Astro.locals.lang;
 const currentUrl = new URL(Astro.request.url);
 currentUrl.searchParams.set("setLang", lang === "en" ? "de" : "en");
 const langToggleHref = currentUrl.pathname + currentUrl.search;
+
+// Only signed-in users can review the queue, so only they pay for the count.
+const pendingIngest = user ? await countPendingIngestEvents() : 0;
 ---
 
 <html lang={lang}>
@@ -48,6 +52,14 @@ const langToggleHref = currentUrl.pathname + currentUrl.search;
       <nav>
         <a href="/">{t(lang, "nav.home")}</a>
         <a href="/items">{t(lang, "nav.items")}</a>
+        {
+          user && (
+            <a href="/ingest">
+              {t(lang, "nav.ingest")}
+              {pendingIngest > 0 && <span class="nav-count">{pendingIngest}</span>}
+            </a>
+          )
+        }
         <a href={langToggleHref} class="lang-toggle" title="English / Deutsch">
           {lang === "en" ? "DE" : "EN"}
         </a>

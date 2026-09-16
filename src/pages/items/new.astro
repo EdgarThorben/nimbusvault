@@ -2,6 +2,7 @@
 import BookStackLayout from "../../layouts/BookStackLayout.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import DetailRowsEditor from "../../components/DetailRowsEditor.astro";
+import NormalizationPanel from "../../components/NormalizationPanel.astro";
 import { actions } from "astro:actions";
 import { itemTypes } from "../../db/schema";
 import { getCollections } from "../../lib/itemQueries";
@@ -81,6 +82,7 @@ const breadcrumbItems = [
 
       <label>{t(lang, "item.fields")}</label>
       <DetailRowsEditor fieldName="fields" />
+      <NormalizationPanel />
 
       <div class="form-actions">
         <button type="submit" class="primary-button">{t(lang, "item.create")}</button>

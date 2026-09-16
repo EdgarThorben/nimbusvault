@@ -1,6 +1,6 @@
 import type { PageDetail } from "../db/schema";
 
-const CATEGORY_ORDER = ["Compute", "Storage & Backup", "Pricing", "Operations"];
+export const CATEGORY_ORDER = ["Compute", "Storage & Backup", "Pricing", "Operations"];
 
 export function groupDetailsByCategory(details: PageDetail[]) {
   const groups = new Map<string, PageDetail[]>();

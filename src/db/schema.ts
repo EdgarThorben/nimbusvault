@@ -175,3 +175,47 @@ export const credentialReveals = pgTable("credential_reveals", {
   revealedBy: uuid("revealed_by").references(() => users.id),
   revealedAt: timestamp("revealed_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// --- Webhook ingest staging ---
+// The deployable half of "event-driven ingestion": external systems POST a
+// signed payload here and it lands in this table, NOT in `items`. Nothing
+// reaches the documentation until a human reviews it at /ingest — a CMDB that
+// silently rewrites itself from an unattended feed is how these tools lose
+// their credibility as a record of what's actually true.
+//
+// Vercel's serverless runtime has no long-lived worker, so polling cloud APIs
+// or holding a Kubernetes watch is out; a webhook receiver is the shape that
+// actually fits the deployment (see CLAUDE.md — hosting is settled).
+
+export const ingestStatuses = ["pending", "applied", "rejected"] as const;
+export type IngestStatus = (typeof ingestStatuses)[number];
+
+/** What a sender is asking us to record. Validated at the endpoint. */
+export interface IngestPayload {
+  name: string;
+  type: ItemType;
+  collectionSlug: string;
+  section?: string;
+  region?: string;
+  fields: PageDetail[];
+}
+
+export const ingestEvents = pgTable("ingest_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // Free-text sender label (e.g. "hetzner-webhook", "ci-deploy") — a name for
+  // the humans reviewing the queue, not an enum to keep in sync with senders.
+  source: text("source").notNull(),
+  // The sender's own id for this event, used to drop retries of a delivery
+  // we've already stored.
+  externalId: text("external_id"),
+  payload: jsonb("payload").$type<IngestPayload>().notNull(),
+  status: text("status").notNull().default("pending").$type<IngestStatus>(),
+  // Set once applied, so the queue can link through to what it produced.
+  itemId: uuid("item_id").references(() => items.id, { onDelete: "set null" }),
+  note: text("note"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("ingest_events_source_external_idx").on(table.source, table.externalId),
+]);
