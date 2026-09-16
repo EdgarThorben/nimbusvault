@@ -1,9 +1,10 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { collections, itemRevisions, items, users } from "../src/db/schema";
+import { collections, credentials, itemRevisions, items, users } from "../src/db/schema";
 import type { ItemType, PageDetail } from "../src/db/schema";
 import { hashPassword } from "../src/lib/auth";
+import { encryptSecret } from "../src/lib/credentialCrypto";
 import { serverImage } from "../src/lib/images";
 
 const DEMO_PASSWORD = "NimbusDemo!2024";
@@ -600,7 +601,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Operations", label: "Uptime (90d)", value: "99.96%" },
       { category: "Operations", label: "Betreut durch", value: "unit.cloud (Infrastruktur) / michi.ws (Konfiguration & Monitoring)" },
       { category: "Zugang", label: "Admin-Login", value: "obh-cluster-admin" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{ADMIN_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "2 years ago", author: "michael", summary: "Cluster initial für Oberlinhaus provisioniert.", changes: [] },
@@ -643,7 +643,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Compliance", label: "Datenkategorie", value: "Besondere Kategorien personenbezogener Daten (Gesundheitsdaten), Art. 9 DSGVO" },
       { category: "Operations", label: "Uptime (90d)", value: "99.90%" },
       { category: "Zugang", label: "Service-Account", value: "svc-bewohnerverwaltung" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{SERVICE_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "2 years ago", author: "michael", summary: "System für die Wohnstätten Potsdam/Kleinmachnow in Betrieb genommen.", changes: [] },
@@ -683,7 +682,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Storage & Backup", label: "Backup", value: "Nightly, 30 Tage Aufbewahrung" },
       { category: "Operations", label: "Uptime (90d)", value: "99.85%" },
       { category: "Zugang", label: "Service-Account", value: "svc-schulverwaltung" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{SERVICE_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "18 months ago", author: "michael", summary: "Schulverwaltung von lokalem Server in die unit.cloud Private Cloud migriert.", changes: [] },
@@ -716,7 +714,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Storage & Backup", label: "Backup", value: "Nightly, 30 Tage Aufbewahrung" },
       { category: "Operations", label: "Uptime (90d)", value: "99.93%" },
       { category: "Zugang", label: "Service-Account", value: "svc-fileserver-potsdam" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{SERVICE_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "2 years ago", author: "michael", summary: "Initial eingerichtet.", changes: [] },
@@ -750,7 +747,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Compliance", label: "Datenkategorie", value: "Personenbezogene Beschäftigtendaten gem. § 26 BDSG" },
       { category: "Operations", label: "Uptime (90d)", value: "99.91%" },
       { category: "Zugang", label: "Service-Account", value: "svc-personalverwaltung" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{SERVICE_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "3 years ago", author: "michael", summary: "Initial eingerichtet.", changes: [] },
@@ -778,7 +774,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Operations", label: "Uptime (90d)", value: "99.98%" },
       { category: "Operations", label: "Betreut durch", value: "unit.cloud (Cloud-PBX Betrieb)" },
       { category: "Zugang", label: "Admin-Login", value: "obh-pbx-admin" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{ADMIN_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "1 year ago", author: "michael", summary: "3CX-Telefonanlage für alle Standorte eingeführt, abgelöst frühere lokale Anlagen.", changes: [] },
@@ -805,7 +800,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Operations", label: "Uptime (90d)", value: "99.95%" },
       { category: "Operations", label: "Betreut durch", value: "michi.ws (Netzwerk & Security)" },
       { category: "Zugang", label: "Admin-Login", value: "obh-vpn-admin" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{ADMIN_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "2 years ago", author: "michael", summary: "VPN-Gateway für die ersten 5 Standorte eingerichtet.", changes: [] },
@@ -840,7 +834,6 @@ const oberlinhausServers: ItemSpec[] = [
       { category: "Storage & Backup", label: "Backup", value: "Kontinuierliche Replikation von pve-unitcloud-potsdam-01" },
       { category: "Operations", label: "Uptime (90d)", value: "99.99%" },
       { category: "Zugang", label: "Admin-Login", value: "obh-dr-admin" },
-      { category: "Zugang", label: "Passwort-Hash (Demo)", value: "{{ADMIN_HASH}}" },
     ],
     revisions: [
       { revision: 1, ago: "1 year ago", author: "michael", summary: "DR-Standort Nürnberg in Betrieb genommen.", changes: [] },
@@ -902,6 +895,7 @@ async function main() {
     .returning();
 
   async function insertItems(collectionId: string, sectionName: string, specs: ItemSpec[]) {
+    const inserted: Record<string, string> = {};
     for (const spec of specs) {
       let cumulativeFields = spec.baseDetails;
       const firstRevision = spec.revisions[0];
@@ -927,6 +921,8 @@ async function main() {
         })
         .returning();
 
+      inserted[spec.slug] = itemRow.id;
+
       for (const rev of spec.revisions) {
         cumulativeFields = applyChanges(cumulativeFields, rev.changes);
         await db.insert(itemRevisions).values({
@@ -942,26 +938,46 @@ async function main() {
 
       await db.update(items).set({ fields: cumulativeFields }).where(eq(items.id, itemRow.id));
     }
+    return inserted;
   }
 
   const allItDeptSpecs = [...servers, ...contentItems];
   await insertItems(itDepartment.id, "Server Systems", allItDeptSpecs);
 
-  // Mock credential hashes for the Oberlinhaus demo case — real argon2id hashes of clearly
-  // fictional demo-only passwords, never used by any actual system.
-  const adminHash = await hashPassword("Obh-Admin-Demo-Only-2026!");
-  const serviceHash = await hashPassword("Obh-Service-Demo-Only-2026!");
-  const withMockHashes = oberlinhausServers.map((spec) => ({
-    ...spec,
-    baseDetails: spec.baseDetails.map((d) => ({
-      ...d,
-      value: d.value.replace("{{ADMIN_HASH}}", adminHash).replace("{{SERVICE_HASH}}", serviceHash),
-    })),
-  }));
+  const oberlinhausItemIds = await insertItems(oberlinhausCollection.id, "Server & Systeme", oberlinhausServers);
 
-  await insertItems(oberlinhausCollection.id, "Server & Systeme", withMockHashes);
+  // Demo-only login secrets for the Oberlinhaus case, stored encrypted in the real
+  // `credentials` table (masked-by-default, reveal-on-demand) instead of as plain hashed
+  // text in `fields` — see CLAUDE.md's confirmed credentials-storage rule. Clearly fictional,
+  // never used by any actual system.
+  const ADMIN_DEMO_SECRET = "Obh-Admin-Demo-Only-2026!";
+  const SERVICE_DEMO_SECRET = "Obh-Service-Demo-Only-2026!";
+  const oberlinhausCredentials = [
+    { slug: "pve-unitcloud-potsdam-01", label: "Admin-Login", username: "obh-cluster-admin", secret: ADMIN_DEMO_SECRET },
+    { slug: "vm-bewohnerverwaltung", label: "Service-Account", username: "svc-bewohnerverwaltung", secret: SERVICE_DEMO_SECRET },
+    { slug: "vm-schulverwaltung", label: "Service-Account", username: "svc-schulverwaltung", secret: SERVICE_DEMO_SECRET },
+    { slug: "vm-fileserver-potsdam", label: "Service-Account", username: "svc-fileserver-potsdam", secret: SERVICE_DEMO_SECRET },
+    { slug: "vm-personalverwaltung", label: "Service-Account", username: "svc-personalverwaltung", secret: SERVICE_DEMO_SECRET },
+    { slug: "pbx-3cx-oberlinhaus", label: "Admin-Login", username: "obh-pbx-admin", secret: ADMIN_DEMO_SECRET },
+    { slug: "vpn-gateway-oberlinhaus", label: "Admin-Login", username: "obh-vpn-admin", secret: ADMIN_DEMO_SECRET },
+    { slug: "backup-dr-node-nuernberg", label: "Admin-Login", username: "obh-dr-admin", secret: ADMIN_DEMO_SECRET },
+  ];
+
+  for (const cred of oberlinhausCredentials) {
+    const encrypted = encryptSecret(cred.secret);
+    await db.insert(credentials).values({
+      itemId: oberlinhausItemIds[cred.slug],
+      label: cred.label,
+      username: cred.username,
+      ciphertext: encrypted.ciphertext,
+      iv: encrypted.iv,
+      authTag: encrypted.authTag,
+      createdBy: userIds.michael,
+    });
+  }
 
   console.log(`Inserted ${allItDeptSpecs.length + oberlinhausServers.length} items across 2 collections, with full revision history.`);
+  console.log(`Inserted ${oberlinhausCredentials.length} encrypted demo credentials.`);
   console.log("Seed complete.");
   process.exit(0);
 }

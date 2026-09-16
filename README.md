@@ -1,4 +1,4 @@
-# NimbusVault (bookstack-clone)
+# NimbusVault
 
 An Astro SSR app that clones the BookStack UI as a real, single-tenant IT-documentation tool (Docusnap/i-doit style): shelves → books → chapters → pages, backed by Postgres, with real authentication and revision history instead of static demo data.
 
@@ -35,7 +35,7 @@ Schema lives in `src/db/schema.ts` (Drizzle). Common commands:
 
 ## Deployment
 
-Linked to Vercel project `bookstack-clone` (connected to this GitHub repo for git-based deploys). `DATABASE_URL` and related Neon env vars are provisioned for Production, Preview, and Development on Vercel already.
+Linked to Vercel project `nimbusvault` (connected to this GitHub repo for git-based deploys). `DATABASE_URL` and related Neon env vars are provisioned for Production, Preview, and Development on Vercel already.
 
 ```sh
 vercel deploy --prod

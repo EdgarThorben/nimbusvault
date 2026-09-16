@@ -60,7 +60,12 @@ export const revealCredential = defineAction({
       throw new ActionError({ code: "NOT_FOUND", message: "Credential not found." });
     }
 
-    const secret = decryptSecret({ ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag });
+    let secret: string;
+    try {
+      secret = decryptSecret({ ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag });
+    } catch {
+      throw new ActionError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to reveal credential right now." });
+    }
 
     await db.insert(credentialReveals).values({ credentialId, revealedBy: user.id });
 
