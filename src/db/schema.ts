@@ -73,6 +73,8 @@ export const itemTypes = [
   "network-device",
   "software-license",
   "service",
+  "vehicle",
+  "job",
   "other",
 ] as const;
 export type ItemType = (typeof itemTypes)[number];
@@ -110,6 +112,7 @@ export const items = pgTable("items", {
   status: text("status").notNull().default("active").$type<ItemStatus>(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   fields: jsonb("fields").$type<PageDetail[]>().notNull().default([]),
+  photos: jsonb("photos").$type<string[]>().notNull().default([]),
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),
   currentRevision: integer("current_revision").notNull().default(1),
@@ -198,6 +201,7 @@ export interface IngestPayload {
   section?: string;
   region?: string;
   fields: PageDetail[];
+  photos?: string[];
 }
 
 export const ingestEvents = pgTable("ingest_events", {
@@ -218,4 +222,21 @@ export const ingestEvents = pgTable("ingest_events", {
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("ingest_events_source_external_idx").on(table.source, table.externalId),
+]);
+
+// --- Customer approval links (public /f/[token]) ---
+export const shareLinkStatuses = ["pending", "approved", "declined"] as const;
+export type ShareLinkStatus = (typeof shareLinkStatuses)[number];
+
+export const shareLinks = pgTable("share_links", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  token: text("token").notNull(),
+  itemId: uuid("item_id").notNull().references(() => items.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending").$type<ShareLinkStatus>(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  note: text("note"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("share_links_token_idx").on(table.token),
 ]);

@@ -17,6 +17,7 @@ import { groupDetailsByCategory } from "../../lib/details";
 import { getMissingRequiredFields } from "../../lib/itemCompleteness";
 import { formatRelativeTime } from "../../lib/time";
 import { breadcrumbForItem } from "../../lib/breadcrumbs";
+import { listShareLinks } from "../../lib/shareQueries";
 import { getImpactGraph } from "../../lib/itemGraph";
 import { t, tItemType } from "../../lib/i18n";
 
@@ -47,6 +48,9 @@ const impact = await getImpactGraph(item.id);
 const otherItems = (await listItems()).filter((i) => i.id !== item.id);
 const credentialItems = await getCredentialsForItem(item.id);
 const collection = await getCollectionBySlug(item.collectionSlug);
+const isJob = item.type === "job" && !!Astro.locals.user;
+const shareLinkRows = isJob ? await listShareLinks(item.id) : [];
+const statusLabel = { pending: "ausstehend", approved: "freigegeben", declined: "abgelehnt" } as const;
 
 const sections = new Map<string, { slug: string; name: string }[]>();
 for (const collectionItem of collection?.items ?? []) {
@@ -165,6 +169,15 @@ const pageNav = [
             }
 
             {
+              Astro.locals.user && item.photos.length > 0 && (
+                <>
+                  <h2>Fotos</h2>
+                  {item.photos.map((path) => <img class="server-image" src={`/p/${path}`} alt="Foto" loading="lazy" />)}
+                </>
+              )
+            }
+
+            {
               item.imageUrl && (
                 <>
                   <h2>{t(lang, "item.image")}</h2>
@@ -209,6 +222,15 @@ const pageNav = [
         exportTitle={item.name}
       />
       {
+        isJob && (
+          <div style="margin-top:1rem;">
+            <button type="button" id="share-btn" class="secondary-button" data-slug={item.slug}>Freigabe-Link</button>
+            <p id="share-msg" style="color:var(--bs-muted);"></p>
+            {shareLinkRows.length > 0 && <p style="color:var(--bs-muted);">Kunde: {statusLabel[shareLinkRows[0].status]}</p>}
+          </div>
+        )
+      }
+      {
         Astro.locals.user && item.status === "active" && (
           <form method="POST" action={actions.archiveItem} style="margin-top:1rem;">
             <input type="hidden" name="slug" value={item.slug} />
@@ -219,3 +241,27 @@ const pageNav = [
     </aside>
   </div>
 </BookStackLayout>
+
+<script>
+  import { actions } from "astro:actions";
+  const btn = document.getElementById("share-btn") as HTMLButtonElement | null;
+  const msg = document.getElementById("share-msg")!;
+  btn?.addEventListener("click", async () => {
+    const { data, error } = await actions.createShareLink({ slug: btn.dataset.slug! });
+    if (error || !data) {
+      msg.textContent = error?.message ?? "Fehler";
+      return;
+    }
+    const url = `${location.origin}/f/${data.token}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: document.title, url });
+        return;
+      } catch {
+        /* cancelled — fall through to copy */
+      }
+    }
+    await navigator.clipboard.writeText(url).catch(() => {});
+    msg.textContent = url;
+  });
+</script>

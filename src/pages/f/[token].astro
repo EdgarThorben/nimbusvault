@@ -1,0 +1,84 @@
+---
+import { actions } from "astro:actions";
+import { getShareLinkByToken } from "../../lib/shareQueries";
+import { groupDetailsByCategory } from "../../lib/details";
+import { JOB_LABELS } from "../../lib/jobCapture";
+
+const { token } = Astro.params;
+const row = token ? await getShareLinkByToken(token) : null;
+
+if (!row) {
+  Astro.response.status = 404;
+  return Astro.rewrite("/404");
+}
+
+const decided = Astro.getActionResult(actions.decideShareLink);
+const { link, item } = row;
+const status = decided && !decided.error ? decided.data.decision : link.status;
+const categories = groupDetailsByCategory(item.fields.filter((f) => f.category !== "Notiz"));
+const total = item.fields.find((f) => f.label === JOB_LABELS.total)?.value;
+---
+
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>{item.name}</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 40rem; padding: 1rem; line-height: 1.5; }
+      img { width: 100%; border-radius: 6px; margin-bottom: .5rem; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+      th { text-align: left; font-weight: 500; padding: .35rem .5rem .35rem 0; vertical-align: top; }
+      td { padding: .35rem 0; text-align: right; }
+      .total { font-size: 1.4rem; font-weight: 700; margin: 1rem 0; }
+      .actions { display: flex; gap: .75rem; margin-top: 1.5rem; }
+      button { flex: 1; font-size: 1.1rem; padding: .9rem; border: 0; border-radius: 8px; cursor: pointer; }
+      .ok { background: #1a7f37; color: #fff; }
+      .no { background: #b42318; color: #fff; }
+      .done { padding: 1rem; border-radius: 8px; background: rgba(128,128,128,.15); font-weight: 600; }
+      .error { color: #b42318; }
+    </style>
+  </head>
+  <body>
+    <h1>{item.name}</h1>
+
+    {item.photos.map((path) => <img src={`/p/${path}?t=${link.token}`} alt="Foto" loading="lazy" />)}
+
+    {
+      categories.map((group) => (
+        <>
+          <h2>{group.category}</h2>
+          <table>
+            <tbody>
+              {group.items.map((d) => (
+                <tr>
+                  <th>{d.label}</th>
+                  <td>{d.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ))
+    }
+
+    {total && <p class="total">Gesamt: {total}</p>}
+
+    {decided?.error && <p class="error">{decided.error.message}</p>}
+
+    {
+      status === "pending" ? (
+        <form method="POST" action={actions.decideShareLink} class="actions">
+          <input type="hidden" name="token" value={link.token} />
+          <button type="submit" name="decision" value="approved" class="ok">Freigeben</button>
+          <button type="submit" name="decision" value="declined" class="no">Ablehnen</button>
+        </form>
+      ) : (
+        <p class="done">{status === "approved" ? "Freigegeben – vielen Dank!" : "Abgelehnt."}</p>
+      )
+    }
+  </body>
+</html>

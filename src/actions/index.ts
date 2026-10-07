@@ -3,6 +3,7 @@ import { addItemRelationship, archiveItem, createItem, updateItem } from "./item
 import { createCollection } from "./collections";
 import { createCredential, revealCredential } from "./credentials";
 import { suggestNormalization } from "./normalization";
+import { captureJob, createShareLink, decideShareLink } from "./werkstatt";
 import { applyIngestEvent, rejectIngestEvent } from "./ingest";
 
 export const server = {
@@ -19,4 +20,7 @@ export const server = {
   suggestNormalization,
   applyIngestEvent,
   rejectIngestEvent,
+  captureJob,
+  createShareLink,
+  decideShareLink,
 };

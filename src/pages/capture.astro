@@ -1,0 +1,123 @@
+---
+import BookStackLayout from "../layouts/BookStackLayout.astro";
+import { actions } from "astro:actions";
+import { getCollections } from "../lib/itemQueries";
+
+if (!Astro.locals.user) {
+  return Astro.redirect("/login");
+}
+
+const result = Astro.getActionResult(actions.captureJob);
+if (result && !result.error) {
+  return Astro.redirect("/ingest");
+}
+
+const collections = await getCollections();
+---
+
+<BookStackLayout title="Auftrag erfassen">
+  <div class="home-wrap">
+    <h1>Auftrag erfassen</h1>
+    {result?.error && <p class="login-error">{result.error.message}</p>}
+
+    <form id="capture-form" class="page-form" method="POST" action={actions.captureJob} enctype="multipart/form-data">
+      <label>
+        Kunde
+        <select name="collection" required>
+          {collections.map((c) => <option value={c.slug}>{c.title}</option>)}
+        </select>
+      </label>
+
+      <label>
+        Fotos
+        <input id="photo-input" type="file" name="photos" accept="image/*" capture="environment" multiple />
+      </label>
+      <p id="photo-count" style="color:var(--bs-muted);margin:0;"></p>
+
+      <label>
+        Diktat / Notizen
+        <textarea id="notes" name="notes" rows="6" placeholder="Kennzeichen, Kilometerstand, Befund, Teile, Arbeitszeit …"></textarea>
+      </label>
+      <button type="button" id="mic" class="secondary-button" hidden>🎤 Diktieren</button>
+
+      <div class="form-actions">
+        <button type="submit" id="submit" class="primary-button">Erfassen</button>
+      </div>
+    </form>
+  </div>
+</BookStackLayout>
+
+<script>
+  const MAX_SIDE = 1280;
+  const form = document.getElementById("capture-form") as HTMLFormElement;
+  const input = document.getElementById("photo-input") as HTMLInputElement;
+  const count = document.getElementById("photo-count")!;
+  const notes = document.getElementById("notes") as HTMLTextAreaElement;
+  const mic = document.getElementById("mic") as HTMLButtonElement;
+  const submit = document.getElementById("submit") as HTMLButtonElement;
+  const collected: File[] = [];
+
+  async function resize(file: File): Promise<File> {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((res, rej) =>
+      canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob"))), "image/jpeg", 0.8),
+    );
+    return new File([blob], `foto-${Date.now()}-${collected.length}.jpg`, { type: "image/jpeg" });
+  }
+
+  // Phone cameras hand over one shot per pick, so accumulate across picks.
+  input.addEventListener("change", async () => {
+    const picked = Array.from(input.files ?? []);
+    for (const f of picked) {
+      try {
+        collected.push(await resize(f));
+      } catch {
+        collected.push(f);
+      }
+    }
+    const dt = new DataTransfer();
+    collected.forEach((f) => dt.items.add(f));
+    input.files = dt.files;
+    count.textContent = `${collected.length} Foto(s) ausgewählt`;
+  });
+
+  form.addEventListener("submit", () => {
+    submit.disabled = true;
+    submit.textContent = "Wird analysiert …";
+  });
+
+  const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+  if (SR) {
+    mic.hidden = false;
+    const rec = new SR();
+    rec.lang = "de-DE";
+    rec.continuous = true;
+    rec.interimResults = false;
+    let on = false;
+    rec.onresult = (e: any) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          notes.value += (notes.value && !notes.value.endsWith(" ") ? " " : "") + e.results[i][0].transcript.trim();
+        }
+      }
+    };
+    rec.onend = () => {
+      on = false;
+      mic.textContent = "🎤 Diktieren";
+    };
+    mic.addEventListener("click", () => {
+      if (on) {
+        rec.stop();
+      } else {
+        rec.start();
+        on = true;
+        mic.textContent = "⏹ Stopp";
+      }
+    });
+  }
+</script>

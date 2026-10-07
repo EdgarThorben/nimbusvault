@@ -247,6 +247,8 @@ const dict = {
     "itemType.network-device": "Network Device",
     "itemType.software-license": "Software License",
     "itemType.service": "Service",
+    "itemType.vehicle": "Vehicle",
+    "itemType.job": "Job",
     "itemType.other": "Other",
 
     "relationshipType.depends_on": "Depends On",
@@ -493,6 +495,8 @@ const dict = {
     "itemType.network-device": "Netzwerkgerät",
     "itemType.software-license": "Softwarelizenz",
     "itemType.service": "Dienst",
+    "itemType.vehicle": "Fahrzeug",
+    "itemType.job": "Auftrag",
     "itemType.other": "Sonstiges",
 
     "relationshipType.depends_on": "Abhängig von",

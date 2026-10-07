@@ -2,8 +2,9 @@ import { ActionError, defineAction } from "astro:actions";
 import { z } from "astro:schema";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { collections, ingestEvents, itemRevisions, items } from "../db/schema";
+import { collections, ingestEvents, itemRelationships, itemRevisions, items } from "../db/schema";
 import type { SessionUser } from "../lib/auth";
+import { JOB_LABELS } from "../lib/jobCapture";
 import { diffDetails } from "../lib/diff";
 import { getItemBySlug } from "../lib/itemQueries";
 import { slugify } from "../lib/slug";
@@ -56,8 +57,11 @@ export const applyIngestEvent = defineAction({
       });
     }
 
-    const slug = slugify(payload.name);
-    const existing = await getItemBySlug(slug);
+    // Jobs always create a new item (never overwrite one with the same name),
+    // attached to a vehicle found or created by plate.
+    const isJob = payload.type === "job";
+    const slug = isJob ? `${slugify(payload.name)}-${event.id.slice(0, 6)}` : slugify(payload.name);
+    const existing = isJob ? null : await getItemBySlug(slug);
     let itemId: string;
 
     if (existing) {
@@ -96,6 +100,7 @@ export const applyIngestEvent = defineAction({
           name: payload.name,
           region: payload.region?.trim() || null,
           fields: payload.fields,
+          photos: payload.photos ?? [],
           createdBy: user.id,
           updatedBy: user.id,
           currentRevision: 1,
@@ -111,6 +116,43 @@ export const applyIngestEvent = defineAction({
         changes: [],
       });
       itemId = created.id;
+
+      const plate = payload.fields.find((f) => f.label === JOB_LABELS.plate)?.value.trim();
+      if (isJob && plate) {
+        const vehicleSlug = `fahrzeug-${slugify(plate)}`;
+        let vehicle = await getItemBySlug(vehicleSlug);
+        if (!vehicle) {
+          const vehicleFields = payload.fields.filter((f) => f.category === "Fahrzeug");
+          const [createdVehicle] = await db
+            .insert(items)
+            .values({
+              type: "vehicle",
+              collectionId: collection.id,
+              slug: vehicleSlug,
+              name: plate,
+              fields: vehicleFields,
+              createdBy: user.id,
+              updatedBy: user.id,
+              currentRevision: 1,
+            })
+            .returning();
+          await db.insert(itemRevisions).values({
+            itemId: createdVehicle.id,
+            revisionNo: 1,
+            authorId: user.id,
+            summary: `Created from ingest event sent by "${event.source}".`,
+            fieldsSnapshot: vehicleFields,
+            changes: [],
+          });
+          vehicle = { ...createdVehicle, collectionTitle: "", collectionSlug: "", createdByName: "", updatedByName: "" };
+        }
+        await db.insert(itemRelationships).values({
+          itemId: created.id,
+          relatedItemId: vehicle.id,
+          relationshipType: "attached_to",
+          createdBy: user.id,
+        });
+      }
     }
 
     await db

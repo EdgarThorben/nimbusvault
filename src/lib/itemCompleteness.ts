@@ -17,6 +17,8 @@ export const requiredFieldLabelsByItemType: Record<ItemType, string[]> = {
   "network-device": ["IP Address", "Location"],
   "software-license": ["Seats", "Renewal Date"],
   service: ["Owner", "SLA"],
+  vehicle: [],
+  job: [],
   other: [],
 };
 
