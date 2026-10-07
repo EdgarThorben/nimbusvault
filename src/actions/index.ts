@@ -1,5 +1,6 @@
 import { demoLogin, login, logout } from "./auth";
 import {
+  analyzeCheckIn,
   checkIn,
   createInvoice,
   decideApproval,
@@ -8,6 +9,7 @@ import {
   saveFindings,
   sendForApproval,
   setStatus,
+  suggestJob,
   uploadPhoto,
 } from "./workshop";
 
@@ -15,7 +17,9 @@ export const server = {
   login,
   demoLogin,
   logout,
+  analyzeCheckIn,
   checkIn,
+  suggestJob,
   uploadPhoto,
   deletePhoto,
   saveFindings,

@@ -57,10 +57,35 @@ const today = new Intl.DateTimeFormat("en-GB", {
     }
   </main>
 
-  <div class="sticky-cta" style="margin-top:auto;">
-    <a class="btn btn-primary" href="/jobs/new">
+  <div class="sticky-cta" style="margin-top:auto;display:flex;flex-direction:column;gap:4px;">
+    <label class="btn btn-primary" style="position:relative;">
+      <input id="quick-camera" type="file" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;opacity:0;" />
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
       Check in a new car
-    </a>
+    </label>
+    <a href="/jobs/new" class="link-btn" style="align-self:center;font-size:14px;">Check in without a photo</a>
   </div>
 </AppLayout>
+
+<script>
+  import { shrinkPhoto } from "../../scripts/client";
+
+  // Camera first: the photo rides along to /jobs/new, which reads the plate from it.
+  const camera = document.getElementById("quick-camera") as HTMLInputElement | null;
+  camera?.addEventListener("change", async () => {
+    const file = camera.files?.[0];
+    if (!file) return;
+    const small = await shrinkPhoto(file, 1280);
+    const dataUrl = await new Promise<string>((res) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.readAsDataURL(small);
+    });
+    try {
+      sessionStorage.setItem("leo-checkin-photo", dataUrl);
+    } catch {
+      /* too big or blocked: the form still works without it */
+    }
+    location.href = "/jobs/new";
+  });
+</script>

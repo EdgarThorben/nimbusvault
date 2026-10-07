@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { del, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 import { ActionError, defineAction } from "astro:actions";
 import { z } from "astro:schema";
 import { and, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
@@ -18,6 +18,7 @@ import {
 import { blobToken } from "../lib/blob";
 import { getLatestApproval, normalizePlate } from "../lib/jobs";
 import { parsePriceToCents, parseQty } from "../lib/money";
+import { suggestCheckIn, suggestFromPhotos, type ImageInput } from "../lib/vision";
 
 function requireLeo(locals: App.Locals) {
   if (!locals.user) {
@@ -34,6 +35,55 @@ async function requireJob(jobId: string) {
 
 const touch = () => ({ updatedAt: new Date() });
 
+const PENDING_PHOTO = /^jobs\/pending\/[0-9a-f-]{36}\.(jpg|png)$/;
+const MAX_CHECKIN_PHOTOS = 6;
+const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+
+function asImage(file: File, data: Buffer): ImageInput {
+  const type = IMAGE_TYPES.find((t) => t === file.type) ?? "image/jpeg";
+  return { data, mediaType: type };
+}
+
+/**
+ * Check-in helper: stores any new photos privately and asks Haiku to read the plate/car from them
+ * and job/customer details from the dictation. Returns suggestions only; nothing is saved as a job.
+ */
+export const analyzeCheckIn = defineAction({
+  accept: "form",
+  input: z.object({
+    photos: z.array(z.instanceof(File)).default([]),
+    transcript: z.string().trim().max(4000).default(""),
+  }),
+  handler: async ({ photos, transcript }, context) => {
+    requireLeo(context.locals);
+    const files = photos.filter((f) => f.size > 0).slice(0, 3);
+    if (!files.length && !transcript) {
+      throw new ActionError({ code: "BAD_REQUEST", message: "Take a photo or record a voice note first." });
+    }
+
+    const images: ImageInput[] = [];
+    const uploaded: string[] = [];
+    for (const file of files) {
+      if (file.size > MAX_PHOTO_BYTES || !file.type.startsWith("image/")) {
+        throw new ActionError({ code: "BAD_REQUEST", message: "Photos must be images under 4 MB." });
+      }
+      const data = Buffer.from(await file.arrayBuffer());
+      const ext = file.type === "image/png" ? "png" : "jpg";
+      const blob = await put(`jobs/pending/${randomUUID()}.${ext}`, data, {
+        access: "private",
+        contentType: file.type,
+        token: blobToken(),
+      });
+      uploaded.push(blob.pathname);
+      images.push(asImage(file, data));
+    }
+
+    const suggestion = await suggestCheckIn(images, transcript);
+    return { suggestion, photos: uploaded };
+  },
+});
+
 export const checkIn = defineAction({
   accept: "form",
   input: z.object({
@@ -43,6 +93,9 @@ export const checkIn = defineAction({
     customerName: z.string().trim().default(""),
     phone: z.string().trim().default(""),
     email: z.string().trim().default(""),
+    notes: z.string().trim().default(""),
+    // Photos taken on the check-in screen, already uploaded by analyzeCheckIn.
+    pendingPhoto: z.array(z.string().regex(PENDING_PHOTO)).max(MAX_CHECKIN_PHOTOS).default([]),
   }),
   handler: async (input, context) => {
     requireLeo(context.locals);
@@ -80,15 +133,20 @@ export const checkIn = defineAction({
         vehicleId = vehicle.id;
       }
 
-      const [job] = await tx.insert(jobs).values({ vehicleId, title: input.title }).returning();
+      const [job] = await tx
+        .insert(jobs)
+        .values({ vehicleId, title: input.title, findings: input.notes })
+        .returning();
+      const photos = [...new Set(input.pendingPhoto)];
+      if (photos.length) {
+        await tx.insert(jobPhotos).values(photos.map((pathname) => ({ jobId: job.id, pathname })));
+      }
       return job.id;
     });
 
     return { id: jobId };
   },
 });
-
-const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
 export const uploadPhoto = defineAction({
   accept: "form",
@@ -116,6 +174,39 @@ export const uploadPhoto = defineAction({
     }
     await db.update(jobs).set(touch()).where(eq(jobs.id, jobId));
     return { jobId };
+  },
+});
+
+/** Haiku drafts findings and estimate lines (no prices) from the job's latest photos. */
+export const suggestJob = defineAction({
+  input: z.object({ jobId: z.uuid() }),
+  handler: async ({ jobId }, context) => {
+    requireLeo(context.locals);
+    const job = await requireJob(jobId);
+    const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, job.vehicleId));
+    const photos = (await db.select().from(jobPhotos).where(eq(jobPhotos.jobId, jobId))).slice(-4);
+    if (!photos.length && !job.findings) {
+      throw new ActionError({ code: "BAD_REQUEST", message: "Add a photo or some findings first." });
+    }
+
+    const images: ImageInput[] = [];
+    for (const p of photos) {
+      const res = await get(p.pathname, { access: "private", token: blobToken() });
+      if (!res || res.statusCode !== 200) continue;
+      const data = Buffer.from(await new Response(res.stream).arrayBuffer());
+      const type = IMAGE_TYPES.find((t) => t === res.blob.contentType) ?? "image/jpeg";
+      images.push({ data, mediaType: type });
+    }
+
+    const suggestion = await suggestFromPhotos(images, {
+      title: job.title,
+      makeModel: vehicle?.makeModel ?? "",
+      findings: job.findings,
+    });
+    if (!suggestion.findings && !suggestion.lines.length) {
+      throw new ActionError({ code: "INTERNAL_SERVER_ERROR", message: "No suggestion this time. Try another photo." });
+    }
+    return suggestion;
   },
 });
 

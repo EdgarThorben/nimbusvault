@@ -6,6 +6,7 @@ import { jobStatuses, type JobStatus } from "../../db/schema";
 import { firstName, getJob, invoiceLabel, statusLabel, statusTone, whatsappNumber } from "../../lib/jobs";
 import { formatEur, totals, vatPercentLabel } from "../../lib/money";
 import { VAT_RATE } from "../../config";
+import { aiEnabled } from "../../lib/vision";
 
 const { id = "" } = Astro.params;
 
@@ -31,6 +32,7 @@ const approval = job.latestApproval;
 const lines = job.lines.length
   ? job.lines.map((l) => ({ ...l, price: (l.unitPriceCents / 100).toFixed(2) }))
   : [{ id: "new", description: "", kind: "part" as const, qty: 1, price: "" }];
+const ai = aiEnabled();
 const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked) as JobStatus[];
 ---
 
@@ -60,7 +62,13 @@ const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked)
     {error && <p class="error">{error}</p>}
 
     <section class="section" aria-labelledby="photos-h">
-      <h2 id="photos-h">Photos</h2>
+      <div class="section-head">
+        <h2 id="photos-h">Photos</h2>
+        {ai && !locked && (
+          <button type="button" id="suggest" class="link-btn" data-job={job.id} style="align-self:center;">Suggest from photos</button>
+        )}
+      </div>
+      <p id="suggest-status" class="notice small" hidden></p>
       <div class="photos">
         {job.photos.map((p) => (
           <div class="photo">
@@ -84,14 +92,14 @@ const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked)
 
     <section class="section" aria-labelledby="findings-h">
       <h2 id="findings-h">Findings</h2>
-      <form method="POST" action={actions.saveFindings} class="form" style="gap:8px;">
+      <form method="POST" action={actions.saveFindings} class="form" style="gap:8px;" data-enhance>
         <input type="hidden" name="jobId" value={job.id} />
         <div class="findings">
-          <button type="button" id="mic" class="mic" aria-label="Record voice note" aria-pressed="false" hidden>
+          <button type="button" id="mic" class="mic" aria-label="Record voice note" aria-pressed="false">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
           </button>
           <label class="box">
-            <span id="mic-label">Findings</span>
+            <span id="mic-label">Voice note becomes text</span>
             <textarea id="findings" name="findings" rows="4" placeholder="What did you find?">{job.findings}</textarea>
           </label>
         </div>
@@ -101,7 +109,7 @@ const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked)
 
     <section class="section" aria-labelledby="estimate-h">
       <h2 id="estimate-h">Estimate</h2>
-      <form id="estimate-form" method="POST" action={actions.saveEstimate} class="form" style="gap:8px;" data-vat={VAT_RATE}>
+      <form id="estimate-form" method="POST" action={actions.saveEstimate} class="form" style="gap:8px;" data-vat={VAT_RATE} data-enhance>
         <input type="hidden" name="jobId" value={job.id} />
         <div class="panel" id="lines">
           {lines.map((l) => (
@@ -147,7 +155,7 @@ const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked)
 
     <section class="section" aria-labelledby="status-h">
       <h2 id="status-h">Status</h2>
-      <form method="POST" action={actions.setStatus} style="display:grid;grid-template-columns:1fr auto;gap:8px;">
+      <form method="POST" action={actions.setStatus} style="display:grid;grid-template-columns:1fr auto;gap:8px;" data-enhance>
         <input type="hidden" name="jobId" value={job.id} />
         <select name="status" aria-label="Job status" disabled={locked}>
           {selectableStatuses.map((s) => <option value={s} selected={s === job.status}>{statusLabel[s]}</option>)}
@@ -198,76 +206,31 @@ const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked)
 <script>
   import { actions } from "astro:actions";
 
+  import { attachDictation, enhanceForms, shrinkPhoto } from "../../scripts/client";
+
+  enhanceForms();
+
   // --- Photos: shrink on the phone before upload, then submit straight away.
   const photoForm = document.getElementById("photo-form") as HTMLFormElement | null;
   const photoInput = document.getElementById("photo-input") as HTMLInputElement | null;
   const photoLabel = document.getElementById("photo-label");
-  const MAX_SIDE = 1600;
-
-  async function shrink(file: File): Promise<File> {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bmp.width * scale);
-    canvas.height = Math.round(bmp.height * scale);
-    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob>((res, rej) =>
-      canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/jpeg", 0.82),
-    );
-    return new File([blob], "photo.jpg", { type: "image/jpeg" });
-  }
 
   photoInput?.addEventListener("change", async () => {
     const file = photoInput.files?.[0];
     if (!file || !photoForm) return;
     if (photoLabel) photoLabel.textContent = "Uploading…";
-    try {
-      const small = await shrink(file);
-      const dt = new DataTransfer();
-      dt.items.add(small);
-      photoInput.files = dt.files;
-    } catch {
-      /* send the original */
-    }
+    const small = await shrinkPhoto(file);
+    const dt = new DataTransfer();
+    dt.items.add(small);
+    photoInput.files = dt.files;
     photoForm.submit();
   });
 
-  // --- Voice note → findings (Web Speech API; Chrome on Android supports it).
-  const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
-  const mic = document.getElementById("mic") as HTMLButtonElement | null;
-  const micLabel = document.getElementById("mic-label");
+  // --- Voice note → findings.
   const findings = document.getElementById("findings") as HTMLTextAreaElement | null;
-  if (SR && mic && findings) {
-    mic.hidden = false;
-    if (micLabel) micLabel.textContent = "Voice note becomes text";
-    const rec = new SR();
-    rec.lang = navigator.language || "en-GB";
-    rec.continuous = true;
-    rec.interimResults = false;
-    let on = false;
-    const setOn = (v: boolean) => {
-      on = v;
-      mic.classList.toggle("on", v);
-      mic.setAttribute("aria-pressed", String(v));
-      if (micLabel) micLabel.textContent = v ? "Recording… tap to stop" : "Voice note becomes text";
-    };
-    rec.onresult = (e: any) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) continue;
-        const text = e.results[i][0].transcript.trim();
-        const sep = findings.value && !/\s$/.test(findings.value) ? " " : "";
-        findings.value += sep + text.charAt(0).toUpperCase() + text.slice(1) + ".";
-      }
-    };
-    rec.onend = () => setOn(false);
-    rec.onerror = () => setOn(false);
-    mic.addEventListener("click", () => {
-      if (on) rec.stop();
-      else {
-        rec.start();
-        setOn(true);
-      }
-    });
+  const mic = document.getElementById("mic") as HTMLButtonElement | null;
+  if (mic && findings) {
+    attachDictation({ button: mic, target: findings, label: document.getElementById("mic-label"), idleText: "Voice note becomes text" });
   }
 
   // --- Estimate lines: add/remove rows and keep the total live.
@@ -313,6 +276,47 @@ const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked)
     const row = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
     linesBox.insertBefore(row, linesBox.querySelector(".kv"));
     (row.querySelector('[name="description"]') as HTMLInputElement).focus();
+  });
+
+  // --- Haiku drafts findings + estimate lines from the photos. Leo still has to save.
+  const suggest = document.getElementById("suggest") as HTMLButtonElement | null;
+  const suggestStatus = document.getElementById("suggest-status");
+  const sayS = (t: string) => {
+    if (!suggestStatus) return;
+    suggestStatus.hidden = !t;
+    suggestStatus.textContent = t;
+  };
+  suggest?.addEventListener("click", async () => {
+    suggest.disabled = true;
+    sayS("Looking at the photos…");
+    const { data, error } = await actions.suggestJob({ jobId: suggest.dataset.job! });
+    suggest.disabled = false;
+    if (error || !data) return sayS(error?.message ?? "No suggestion this time.");
+
+    if (data.findings && findings) {
+      findings.value = findings.value.trim() ? `${findings.value.trim()}\n${data.findings}` : data.findings;
+      findings.classList.add("ai-filled");
+    }
+    // Drop the empty starter row, then add the drafted lines (no prices: Leo fills those in).
+    linesBox?.querySelectorAll(".line").forEach((row) => {
+      const d = (row.querySelector('[name="description"]') as HTMLInputElement).value.trim();
+      const p = (row.querySelector('[name="unitPrice"]') as HTMLInputElement).value.trim();
+      if (!d && !p) row.remove();
+    });
+    for (const line of data.lines) {
+      if (!template || !linesBox) break;
+      const row = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      (row.querySelector('[name="description"]') as HTMLInputElement).value = line.description;
+      (row.querySelector('[name="kind"]') as HTMLSelectElement).value = line.kind;
+      (row.querySelector('[name="qty"]') as HTMLInputElement).value = String(line.qty);
+      row.querySelectorAll("input").forEach((i) => i.classList.add("ai-filled"));
+      linesBox.insertBefore(row, linesBox.querySelector(".kv"));
+    }
+    if (data.lines.length) markDirty();
+    sayS(
+      `Drafted ${data.lines.length} line${data.lines.length === 1 ? "" : "s"}${data.findings ? " and findings" : ""}. ` +
+        "Add prices, check everything, then save findings and estimate.",
+    );
   });
 
   // --- Send for approval: make a fresh link, then hand off to WhatsApp or SMS.

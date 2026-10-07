@@ -1,12 +1,15 @@
 ---
 import AppLayout from "../../layouts/AppLayout.astro";
 import { actions } from "astro:actions";
+import { aiEnabled } from "../../lib/vision";
 
+// No-JS fallback path: the form posts normally and errors render here.
 const result = Astro.getActionResult(actions.checkIn);
 if (result && !result.error) return Astro.redirect(`/jobs/${result.data.id}`);
 const error = result?.error;
 const fieldErrors = error && "fields" in error ? (error.fields as Record<string, string[]>) : {};
 const firstFieldError = Object.values(fieldErrors)[0]?.[0];
+const ai = aiEnabled();
 ---
 
 <AppLayout title="Check in a car">
@@ -18,23 +21,50 @@ const firstFieldError = Object.values(fieldErrors)[0]?.[0];
   </header>
 
   <main class="content">
+    <section class="section" aria-labelledby="capture-h">
+      <h2 id="capture-h">Photo and voice</h2>
+      <p class="muted small" style="margin:0;">
+        {ai
+          ? "Snap the car with its plate, and say what's wrong and who the customer is. The form fills itself in."
+          : "Photos are attached to the job. Dictation goes into the notes."}
+      </p>
+      <div class="photos" id="checkin-photos">
+        <label class="add-photo" style="position:relative;">
+          <input id="checkin-camera" type="file" accept="image/*" capture="environment" />
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+          <span>Take photo</span>
+        </label>
+      </div>
+      <div class="findings">
+        <button type="button" id="checkin-mic" class="mic" aria-label="Record voice note" aria-pressed="false">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+        </button>
+        <label class="box">
+          <span id="checkin-mic-label">Voice note becomes text</span>
+          <textarea id="checkin-notes" name="notes" form="checkin-form" rows="3" placeholder="“Golf, front brakes squeal. Anna Becker, 0151 2345678.”"></textarea>
+        </label>
+      </div>
+      <p id="ai-status" class="notice small" hidden></p>
+    </section>
+
     {error && <p class="error">{firstFieldError ?? error.message}</p>}
-    <form class="form" method="POST" action={actions.checkIn}>
+    <form id="checkin-form" class="form" method="POST" action={actions.checkIn} data-enhance data-success="/jobs/:id" data-ai={ai ? "1" : ""}>
+      <div id="pending-photos" hidden></div>
       <label class="field">
         Number plate
         <input type="text" name="plate" required autocapitalize="characters" autocomplete="off" placeholder="B-AB 1234" />
       </label>
       <label class="field">
         Make and model
-        <input type="text" name="makeModel" placeholder="VW Golf VII" />
+        <input type="text" name="makeModel" autocomplete="off" placeholder="VW Golf VII" />
       </label>
       <label class="field">
         What needs doing?
-        <input type="text" name="title" required placeholder="Front brakes" />
+        <input type="text" name="title" required autocomplete="off" placeholder="Front brakes" />
       </label>
 
       <h2 style="margin-top:6px;">Customer</h2>
-      <p class="muted small" style="margin:-6px 0 0;">A car Leo has seen before keeps its customer. Only fill this in for a new car.</p>
+      <p class="muted small" style="margin:-6px 0 0;">A car Leo has seen before keeps its customer. Only needed for a new car.</p>
       <label class="field">
         Name
         <input type="text" name="customerName" autocomplete="off" />
@@ -52,3 +82,115 @@ const firstFieldError = Object.values(fieldErrors)[0]?.[0];
     </form>
   </main>
 </AppLayout>
+
+<script>
+  import { actions } from "astro:actions";
+  import { attachDictation, enhanceForms, shrinkPhoto } from "../../scripts/client";
+
+  const form = document.getElementById("checkin-form") as HTMLFormElement;
+  const camera = document.getElementById("checkin-camera") as HTMLInputElement;
+  const grid = document.getElementById("checkin-photos")!;
+  const pending = document.getElementById("pending-photos")!;
+  const notes = document.getElementById("checkin-notes") as HTMLTextAreaElement;
+  const status = document.getElementById("ai-status")!;
+  const ai = form.dataset.ai === "1";
+  const FIELDS = ["plate", "makeModel", "title", "customerName", "phone", "email"] as const;
+
+  enhanceForms();
+
+  function say(text: string) {
+    status.hidden = !text;
+    status.textContent = text;
+  }
+
+  /** Only fills fields that are still empty, so nothing Leo typed gets overwritten. */
+  function fill(s: Record<string, string>) {
+    const filled: string[] = [];
+    for (const name of FIELDS) {
+      const input = form.elements.namedItem(name) as HTMLInputElement | null;
+      if (input && !input.value.trim() && s[name]) {
+        input.value = s[name];
+        input.classList.add("ai-filled");
+        filled.push(name);
+      }
+    }
+    if (s.notes && !notes.value.includes(s.notes) && !notes.value.trim()) notes.value = s.notes;
+    return filled.length;
+  }
+
+  function addThumb(file: File) {
+    const tile = document.createElement("div");
+    tile.className = "photo";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.alt = "Check-in photo";
+    tile.append(img);
+    grid.insertBefore(tile, grid.lastElementChild);
+    return tile;
+  }
+
+  async function analyze(fd: FormData, busyText: string) {
+    say(busyText);
+    const { data, error } = await actions.analyzeCheckIn(fd);
+    if (error || !data) {
+      say(error?.message ?? "Couldn't read that. Fill the form in by hand.");
+      return null;
+    }
+    for (const p of data.photos) {
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "pendingPhoto";
+      hidden.value = p;
+      pending.append(hidden);
+    }
+    if (!ai) {
+      say(data.photos.length ? "Photo saved. It will be attached to the job." : "");
+      return data;
+    }
+    const n = fill({ ...data.suggestion });
+    say(n ? `Filled in ${n} field${n === 1 ? "" : "s"}. Please check them.` : "Nothing new found. Fill in the rest by hand.");
+    return data;
+  }
+
+  async function handlePhoto(file: File) {
+    const small = await shrinkPhoto(file, 1280);
+    const tile = addThumb(small);
+    tile.style.opacity = ".6";
+    const fd = new FormData();
+    fd.append("photos", small);
+    const data = await analyze(fd, ai ? "Reading the plate…" : "Saving photo…");
+    tile.style.opacity = data ? "1" : ".35";
+  }
+
+  camera.addEventListener("change", () => {
+    const file = camera.files?.[0];
+    camera.value = "";
+    if (file) handlePhoto(file);
+  });
+
+  attachDictation({
+    button: document.getElementById("checkin-mic") as HTMLButtonElement,
+    target: notes,
+    label: document.getElementById("checkin-mic-label"),
+    idleText: "Voice note becomes text",
+    onStop: (text) => {
+      if (!ai) return;
+      const fd = new FormData();
+      fd.append("transcript", text);
+      analyze(fd, "Listening to your note…");
+    },
+  });
+
+  // Photo taken straight from the "Check in a new car" button on /jobs.
+  try {
+    const handoff = sessionStorage.getItem("leo-checkin-photo");
+    if (handoff) {
+      sessionStorage.removeItem("leo-checkin-photo");
+      fetch(handoff)
+        .then((r) => r.blob())
+        .then((b) => handlePhoto(new File([b], "photo.jpg", { type: "image/jpeg" })));
+    }
+  } catch {
+    /* storage unavailable */
+  }
+</script>

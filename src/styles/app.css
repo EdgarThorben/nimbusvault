@@ -174,3 +174,5 @@ textarea { resize: vertical; }
 .centered { padding: 48px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; }
 
 .login { padding: 48px 20px; display: flex; flex-direction: column; gap: 20px; }
+
+input.ai-filled, textarea.ai-filled { background: #fff7ed; border-color: #f59e6b; }
