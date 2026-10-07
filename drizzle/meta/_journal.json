@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1783976762214,
-      "tag": "0000_jittery_valkyrie",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1783977082690,
-      "tag": "0001_ancient_the_captain",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1789576465190,
-      "tag": "0002_clean_morgan_stark",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1791378665854,
-      "tag": "0003_overrated_epoch",
+      "when": 1791381417604,
+      "tag": "0000_oval_jack_power",
       "breakpoints": true
     }
   ]

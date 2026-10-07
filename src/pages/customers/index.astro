@@ -1,0 +1,28 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import { listCustomers } from "../../lib/jobs";
+
+const customers = await listCustomers();
+---
+
+<AppLayout title="Customers" tab="customers">
+  <header class="page-head">
+    <span class="eyebrow">Leo's Workshop</span>
+    <h1>Customers</h1>
+  </header>
+  <main class="content">
+    {customers.length === 0 && <p class="empty">Customers appear here after their first check-in.</p>}
+    {
+      customers.map((c) => (
+        <div class="list-row">
+          <strong style="font-size:16px;">{c.name}</strong>
+          {c.cars.map((car) => <span class="muted small">{car}</span>)}
+          <div class="btn-row" style="margin-top:4px;">
+            {c.phone ? <a class="btn" href={`tel:${c.phone}`}>Call</a> : <span class="muted small">No phone</span>}
+            {c.email && <a class="btn" href={`mailto:${c.email}`}>Email</a>}
+          </div>
+        </div>
+      ))
+    }
+  </main>
+</AppLayout>

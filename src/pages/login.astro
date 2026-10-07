@@ -1,52 +1,31 @@
 ---
-import BookStackLayout from "../layouts/BookStackLayout.astro";
+import AppLayout from "../layouts/AppLayout.astro";
 import { actions } from "astro:actions";
-import { t } from "../lib/i18n";
+import { business } from "../config";
 
-const lang = Astro.locals.lang;
-
-const loginResult = Astro.getActionResult(actions.login);
-const demoResult = Astro.getActionResult(actions.demoLogin);
-const result = loginResult ?? demoResult;
-
-if (result && !result.error) {
-  return Astro.redirect("/");
+const result = Astro.getActionResult(actions.login);
+if (Astro.locals.user || (result && !result.error)) {
+  return Astro.redirect("/jobs");
 }
 ---
 
-<BookStackLayout title="Log in">
-  <div class="login-wrap">
-    <div class="login-card">
-      <h1>{t(lang, "login.title")}</h1>
-
-      <form method="POST" action={actions.demoLogin}>
-        <button type="submit" class="primary-button demo-login-button">{t(lang, "login.demoButton")}</button>
-      </form>
-
-      <div class="login-divider"><span>{t(lang, "login.divider")}</span></div>
-
-      <p class="login-note">
-        {t(lang, "login.note")}
-        <code>NimbusDemo!2024</code> — try <code>priya@nimbusvault.io</code>,
-        <code>barry@nimbusvault.io</code>, or <code>marcus@nimbusvault.io</code>.
-      </p>
-      {
-        result?.error && (
-          <p class="login-error">{result.error.message}</p>
-        )
-      }
-      <form class="login-form" method="POST" action={actions.login}>
-        <label>
-          {t(lang, "login.email")}
-          <input type="email" name="email" placeholder="you@nimbusvault.io" required />
-        </label>
-        <label>
-          {t(lang, "login.password")}
-          <input type="password" name="password" placeholder="••••••••" required />
-        </label>
-        <button type="submit">{t(lang, "login.submit")}</button>
-      </form>
-      <a class="back-link" href="/">{t(lang, "login.backLink")}</a>
+<AppLayout title="Log in">
+  <main class="login">
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <span class="eyebrow">{business.name}</span>
+      <h1>Log in</h1>
     </div>
-  </div>
-</BookStackLayout>
+    {result?.error && <p class="error">{result.error.message}</p>}
+    <form class="form" method="POST" action={actions.login}>
+      <label class="field">
+        Email
+        <input type="email" name="email" autocomplete="username" required />
+      </label>
+      <label class="field">
+        Password
+        <input type="password" name="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit" class="btn btn-primary">Log in</button>
+    </form>
+  </main>
+</AppLayout>

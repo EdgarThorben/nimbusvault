@@ -1,16 +1,11 @@
 ---
-import BookStackLayout from "../layouts/BookStackLayout.astro";
-import { t } from "../lib/i18n";
-
-const lang = Astro.locals.lang;
+import AppLayout from "../layouts/AppLayout.astro";
 ---
 
-<BookStackLayout title="Page Not Found">
-  <div class="home-wrap" style="text-align:center; padding:4rem 1rem;">
-    <h1 style="font-size:2.4rem; margin-bottom:0.5rem;">{t(lang, "notFound.title")}</h1>
-    <p style="color:var(--bs-muted); margin-bottom:1.5rem;">
-      {t(lang, "notFound.body")}
-    </p>
-    <a class="new-page-link" href="/">{t(lang, "notFound.backLink")}</a>
-  </div>
-</BookStackLayout>
+<AppLayout title="Not found">
+  <main class="centered">
+    <h1>Not found</h1>
+    <p class="muted">This page doesn't exist, or the link has expired.</p>
+    <a class="btn" href="/">Go to start</a>
+  </main>
+</AppLayout>

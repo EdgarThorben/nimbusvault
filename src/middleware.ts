@@ -1,24 +1,21 @@
 import { defineMiddleware } from "astro:middleware";
 import { SESSION_COOKIE_NAME, getSessionUser } from "./lib/auth";
-import { DEFAULT_LANG, LANG_COOKIE_NAME, isLang } from "./lib/i18n";
+
+// Pages a customer (or the browser installing the app) may load without Leo's session.
+// /p/ checks its own access (session or approval token); actions check their own too.
+const PUBLIC_PREFIXES = ["/login", "/a/", "/p/", "/_astro/", "/_actions/", "/icons/"];
+const PUBLIC_FILES = ["/manifest.webmanifest", "/favicon.svg", "/favicon.ico", "/sw.js", "/offline.html", "/robots.txt", "/404"];
 
 export const onRequest = defineMiddleware(async (context, next) => {
   const sessionId = context.cookies.get(SESSION_COOKIE_NAME)?.value;
   context.locals.user = sessionId ? await getSessionUser(sessionId) : null;
 
-  const url = new URL(context.request.url);
-  const requestedLang = url.searchParams.get("setLang");
-  if (isLang(requestedLang)) {
-    context.cookies.set(LANG_COOKIE_NAME, requestedLang, {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
-    url.searchParams.delete("setLang");
-    return context.redirect(url.pathname + url.search, 303);
+  const path = context.url.pathname;
+  const isPublic = PUBLIC_FILES.includes(path) || PUBLIC_PREFIXES.some((p) => path.startsWith(p));
+  if (!context.locals.user && !isPublic) {
+    if (context.request.method === "GET") return context.redirect("/login");
+    return new Response("Unauthorized", { status: 401 });
   }
-
-  const cookieLang = context.cookies.get(LANG_COOKIE_NAME)?.value;
-  context.locals.lang = isLang(cookieLang) ? cookieLang : DEFAULT_LANG;
 
   return next();
 });

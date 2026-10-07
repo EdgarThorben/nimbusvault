@@ -1,0 +1,66 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import { actions } from "astro:actions";
+import { business } from "../../config";
+import { TIMEZONE, listBoardJobs, statusLabel, statusTone } from "../../lib/jobs";
+
+const logout = Astro.getActionResult(actions.logout);
+if (logout && !logout.error) return Astro.redirect("/login");
+
+const list = await listBoardJobs();
+const count = (statuses: string[]) => list.filter((j) => statuses.includes(j.status)).length;
+const today = new Intl.DateTimeFormat("en-GB", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: TIMEZONE,
+}).format(new Date());
+---
+
+<AppLayout title="Today's jobs" tab="jobs">
+  <header class="page-head">
+    <div class="section-head">
+      <span class="eyebrow">{business.name} · {today}</span>
+      <form method="POST" action={actions.logout}>
+        <button type="submit" class="link-btn small" style="font-size:13px;">Log out</button>
+      </form>
+    </div>
+    <h1>{list.length === 0 ? "No cars yet" : `${list.length} ${list.length === 1 ? "car" : "cars"} today`}</h1>
+  </header>
+
+  <div class="stats">
+    <div class="stat wait"><b>{count(["awaiting_approval"])}</b><span>awaiting approval</span></div>
+    <div class="stat"><b>{count(["approved", "in_progress"])}</b><span>in progress</span></div>
+    <div class="stat"><b>{count(["ready"])}</b><span>ready for pickup</span></div>
+  </div>
+
+  <main class="content">
+    {
+      list.length === 0 ? (
+        <p class="empty">Nothing on the floor. Check in the first car below.</p>
+      ) : (
+        <div class="job-list">
+          {list.map((job) => (
+            <a class="job-card" href={`/jobs/${job.id}`}>
+              <div class="info">
+                <div class="top">
+                  <span class="plate">{job.plate}</span>
+                  <span class="car">{job.makeModel}</span>
+                </div>
+                <div class="task">{job.title}</div>
+              </div>
+              <span class:list={["pill", statusTone[job.status]]}>{statusLabel[job.status]}</span>
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </main>
+
+  <div class="sticky-cta" style="margin-top:auto;">
+    <a class="btn btn-primary" href="/jobs/new">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+      Check in a new car
+    </a>
+  </div>
+</AppLayout>

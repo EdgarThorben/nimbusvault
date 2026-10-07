@@ -1,26 +1,26 @@
-import { demoLogin, login, logout } from "./auth";
-import { addItemRelationship, archiveItem, createItem, updateItem } from "./items";
-import { createCollection } from "./collections";
-import { createCredential, revealCredential } from "./credentials";
-import { suggestNormalization } from "./normalization";
-import { captureJob, createShareLink, decideShareLink } from "./werkstatt";
-import { applyIngestEvent, rejectIngestEvent } from "./ingest";
+import { login, logout } from "./auth";
+import {
+  checkIn,
+  createInvoice,
+  decideApproval,
+  deletePhoto,
+  saveEstimate,
+  saveFindings,
+  sendForApproval,
+  setStatus,
+  uploadPhoto,
+} from "./workshop";
 
 export const server = {
   login,
   logout,
-  demoLogin,
-  createItem,
-  updateItem,
-  archiveItem,
-  addItemRelationship,
-  createCollection,
-  createCredential,
-  revealCredential,
-  suggestNormalization,
-  applyIngestEvent,
-  rejectIngestEvent,
-  captureJob,
-  createShareLink,
-  decideShareLink,
+  checkIn,
+  uploadPhoto,
+  deletePhoto,
+  saveFindings,
+  saveEstimate,
+  setStatus,
+  sendForApproval,
+  decideApproval,
+  createInvoice,
 };

@@ -1,5 +1,5 @@
 {
-  "name": "nimbusvault",
+  "name": "leos-workshop",
   "type": "module",
   "version": "0.0.1",
   "engines": {
@@ -21,6 +21,7 @@
     "@vercel/blob": "^2.8.1",
     "astro": "^7.0.7",
     "drizzle-orm": "^0.45.2",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {

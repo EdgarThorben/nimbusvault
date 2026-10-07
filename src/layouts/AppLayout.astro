@@ -1,0 +1,77 @@
+---
+import "../styles/app.css";
+import { business } from "../config";
+
+interface Props {
+  title: string;
+  description?: string;
+  tab?: "jobs" | "customers" | "invoices";
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description = `${business.name}: check-ins, photos, estimates, approvals and invoices.`,
+  tab,
+  noindex = true,
+} = Astro.props;
+const fullTitle = title === business.name ? title : `${title} · ${business.name}`;
+
+const tabs = [
+  { id: "jobs", href: "/jobs", label: "Jobs", icon: "M5 6h14M5 12h14M5 18h9" },
+  { id: "customers", href: "/customers", label: "Customers", icon: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20c1.5-4 5-5 8-5s6.5 1 8 5" },
+  { id: "invoices", href: "/invoices", label: "Invoices", icon: "M6 3h9l3 3v15H6zM9 10h6M9 14h6M9 18h4" },
+] as const;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <meta name="theme-color" content="#1C1F22" />
+    <meta name="application-name" content={business.name} />
+    <meta name="apple-mobile-web-app-title" content="Leo's" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class:list={["app", { "has-tabs": !!tab }]}>
+      <slot />
+    </div>
+    {
+      tab && (
+        <div class="tabbar">
+          <nav aria-label="Main navigation">
+            {tabs.map((t) => (
+              <a href={t.href} aria-current={t.id === tab ? "page" : undefined}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={t.icon} /></svg>
+                {t.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+      )
+    }
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      }
+    </script>
+  </body>
+</html>

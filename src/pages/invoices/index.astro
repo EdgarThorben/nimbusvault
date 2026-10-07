@@ -1,0 +1,66 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import { actions } from "astro:actions";
+import { invoiceLabel, listInvoiceJobs, statusLabel, statusTone } from "../../lib/jobs";
+import { formatEur, totals } from "../../lib/money";
+
+const result = Astro.getActionResult(actions.createInvoice);
+if (result && !result.error) return Astro.redirect(`/invoices?made=${result.data.jobId}`);
+
+const all = await listInvoiceJobs();
+const toInvoice = all.filter((j) => j.invoiceNumber === null);
+const issued = all.filter((j) => j.invoiceNumber !== null);
+const made = Astro.url.searchParams.get("made");
+---
+
+<AppLayout title="Invoices" tab="invoices">
+  <header class="page-head">
+    <span class="eyebrow">Leo's Workshop</span>
+    <h1>Invoices</h1>
+  </header>
+  <main class="content">
+    {result?.error && <p class="error">{result.error.message}</p>}
+
+    <section class="section">
+      <h2>Ready to invoice</h2>
+      {toInvoice.length === 0 && <p class="empty">Approved jobs show up here.</p>}
+      {
+        toInvoice.map((j) => (
+          <div class="list-row">
+            <div class="row-top">
+              <span class="plate">{j.plate}</span>
+              <span class:list={["pill", statusTone[j.status]]}>{statusLabel[j.status]}</span>
+            </div>
+            <a href={`/jobs/${j.id}`} style="font-weight:500;">{j.title}</a>
+            <span class="muted small">{j.customerName} · {formatEur(totals(j.lines).gross)} incl. VAT</span>
+            <form method="POST" action={actions.createInvoice}>
+              <input type="hidden" name="jobId" value={j.id} />
+              <button type="submit" class="btn btn-dark" disabled={j.lines.length === 0}>
+                {j.lines.length === 0 ? "No line items yet" : "Create PDF invoice"}
+              </button>
+            </form>
+          </div>
+        ))
+      }
+    </section>
+
+    <section class="section">
+      <h2>Issued</h2>
+      {issued.length === 0 && <p class="empty">No invoices yet.</p>}
+      {
+        issued.map((j) => (
+          <div class="list-row" style={j.id === made ? "outline:3px solid #f59e6b;" : ""}>
+            <div class="row-top">
+              <strong>{invoiceLabel(j.invoiceNumber!)}</strong>
+              <span class="muted small">
+                {j.invoicedAt!.toLocaleDateString("en-GB", { timeZone: "Europe/Berlin" })}
+              </span>
+            </div>
+            <span class="muted small">{j.plate} · {j.customerName} · {formatEur(totals(j.lines).gross)}</span>
+            <a class="btn" href={`/invoices/${j.id}.pdf`}>Open PDF</a>
+          </div>
+        ))
+      }
+    </section>
+  </main>
+</AppLayout>

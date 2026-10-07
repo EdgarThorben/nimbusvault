@@ -31,30 +31,6 @@ export const login = defineAction({
   },
 });
 
-const DEMO_ACCOUNT_EMAIL = "demo@nimbusvault.io";
-
-export const demoLogin = defineAction({
-  accept: "form",
-  handler: async (_input, context) => {
-    const [user] = await db.select().from(users).where(eq(users.email, DEMO_ACCOUNT_EMAIL)).limit(1);
-
-    if (!user) {
-      throw new ActionError({ code: "NOT_FOUND", message: "Demo account is missing — did you run `npm run db:seed`?" });
-    }
-
-    const session = await createSession(user.id);
-    context.cookies.set(SESSION_COOKIE_NAME, session.id, {
-      httpOnly: true,
-      secure: import.meta.env.PROD,
-      sameSite: "lax",
-      path: "/",
-      expires: session.expiresAt,
-    });
-
-    return { displayName: user.displayName };
-  },
-});
-
 export const logout = defineAction({
   accept: "form",
   handler: async (_input, context) => {

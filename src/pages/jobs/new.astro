@@ -1,0 +1,54 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import { actions } from "astro:actions";
+
+const result = Astro.getActionResult(actions.checkIn);
+if (result && !result.error) return Astro.redirect(`/jobs/${result.data.id}`);
+const error = result?.error;
+const fieldErrors = error && "fields" in error ? (error.fields as Record<string, string[]>) : {};
+const firstFieldError = Object.values(fieldErrors)[0]?.[0];
+---
+
+<AppLayout title="Check in a car">
+  <header class="page-head with-back">
+    <a class="back" href="/jobs" aria-label="Back to jobs">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </a>
+    <h1 style="font-size:26px;">Check in a car</h1>
+  </header>
+
+  <main class="content">
+    {error && <p class="error">{firstFieldError ?? error.message}</p>}
+    <form class="form" method="POST" action={actions.checkIn}>
+      <label class="field">
+        Number plate
+        <input type="text" name="plate" required autocapitalize="characters" autocomplete="off" placeholder="B-AB 1234" />
+      </label>
+      <label class="field">
+        Make and model
+        <input type="text" name="makeModel" placeholder="VW Golf VII" />
+      </label>
+      <label class="field">
+        What needs doing?
+        <input type="text" name="title" required placeholder="Front brakes" />
+      </label>
+
+      <h2 style="margin-top:6px;">Customer</h2>
+      <p class="muted small" style="margin:-6px 0 0;">A car Leo has seen before keeps its customer. Only fill this in for a new car.</p>
+      <label class="field">
+        Name
+        <input type="text" name="customerName" autocomplete="off" />
+      </label>
+      <label class="field">
+        Mobile number <span class="hint">for WhatsApp / SMS</span>
+        <input type="tel" name="phone" autocomplete="off" placeholder="0151 2345678" />
+      </label>
+      <label class="field">
+        Email <span class="hint">optional</span>
+        <input type="email" name="email" autocomplete="off" />
+      </label>
+
+      <button type="submit" class="btn btn-primary">Check in</button>
+    </form>
+  </main>
+</AppLayout>

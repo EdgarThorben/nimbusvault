@@ -1,0 +1,340 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import { actions } from "astro:actions";
+import { business } from "../../config";
+import { jobStatuses, type JobStatus } from "../../db/schema";
+import { firstName, getJob, invoiceLabel, statusLabel, statusTone, whatsappNumber } from "../../lib/jobs";
+import { formatEur, totals, vatPercentLabel } from "../../lib/money";
+import { VAT_RATE } from "../../config";
+
+const { id = "" } = Astro.params;
+
+const results = [
+  Astro.getActionResult(actions.uploadPhoto),
+  Astro.getActionResult(actions.deletePhoto),
+  Astro.getActionResult(actions.saveFindings),
+  Astro.getActionResult(actions.saveEstimate),
+  Astro.getActionResult(actions.setStatus),
+].filter(Boolean);
+if (results.length && results.every((r) => !r!.error)) return Astro.redirect(`/jobs/${id}`);
+const error = results.find((r) => r?.error)?.error?.message;
+
+const job = await getJob(id);
+if (!job) {
+  Astro.response.status = 404;
+  return Astro.rewrite("/404");
+}
+
+const t = totals(job.lines);
+const locked = job.invoiceNumber !== null;
+const approval = job.latestApproval;
+const lines = job.lines.length
+  ? job.lines.map((l) => ({ ...l, price: (l.unitPriceCents / 100).toFixed(2) }))
+  : [{ id: "new", description: "", kind: "part" as const, qty: 1, price: "" }];
+const selectableStatuses = jobStatuses.filter((s) => s !== "invoiced" || locked) as JobStatus[];
+---
+
+<AppLayout title={`${job.plate} · ${job.title}`}>
+  <header class="page-head with-back">
+    <a class="back" href="/jobs" aria-label="Back to jobs">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </a>
+    <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+      <span class="plate">{job.plate}</span>
+      <span class="muted" style="font-size:14px;">
+        {[job.makeModel, job.customerName].filter(Boolean).join(" · ")}
+        {job.customerPhone && <> · <a href={`tel:${job.customerPhone}`}>{job.customerPhone}</a></>}
+      </span>
+    </div>
+  </header>
+
+  <main class="content">
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <h1 style="font-size:26px;">{job.title}</h1>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class:list={["pill", statusTone[job.status]]}>{statusLabel[job.status]}</span>
+        {locked && <a href={`/invoices/${job.id}.pdf`} class="small">Invoice {invoiceLabel(job.invoiceNumber!)} (PDF)</a>}
+      </div>
+    </div>
+
+    {error && <p class="error">{error}</p>}
+
+    <section class="section" aria-labelledby="photos-h">
+      <h2 id="photos-h">Photos</h2>
+      <div class="photos">
+        {job.photos.map((p) => (
+          <div class="photo">
+            <a href={`/p/${p.pathname}`}><img src={`/p/${p.pathname}`} alt="Job photo" loading="lazy" /></a>
+            <form method="POST" action={actions.deletePhoto}>
+              <input type="hidden" name="id" value={p.id} />
+              <button type="submit" class="remove" aria-label="Remove photo"><span aria-hidden="true">×</span></button>
+            </form>
+          </div>
+        ))}
+        <form id="photo-form" method="POST" action={actions.uploadPhoto} enctype="multipart/form-data" style="display:contents;">
+          <input type="hidden" name="jobId" value={job.id} />
+          <label class="add-photo" style="position:relative;">
+            <input id="photo-input" type="file" name="photos" accept="image/*" capture="environment" />
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+            <span id="photo-label">Add photo</span>
+          </label>
+        </form>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="findings-h">
+      <h2 id="findings-h">Findings</h2>
+      <form method="POST" action={actions.saveFindings} class="form" style="gap:8px;">
+        <input type="hidden" name="jobId" value={job.id} />
+        <div class="findings">
+          <button type="button" id="mic" class="mic" aria-label="Record voice note" aria-pressed="false" hidden>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+          </button>
+          <label class="box">
+            <span id="mic-label">Findings</span>
+            <textarea id="findings" name="findings" rows="4" placeholder="What did you find?">{job.findings}</textarea>
+          </label>
+        </div>
+        <button type="submit" class="btn">Save findings</button>
+      </form>
+    </section>
+
+    <section class="section" aria-labelledby="estimate-h">
+      <h2 id="estimate-h">Estimate</h2>
+      <form id="estimate-form" method="POST" action={actions.saveEstimate} class="form" style="gap:8px;" data-vat={VAT_RATE}>
+        <input type="hidden" name="jobId" value={job.id} />
+        <div class="panel" id="lines">
+          {lines.map((l) => (
+            <div class="line">
+              <input type="text" name="description" value={l.description} placeholder="Front brake pads" aria-label="Description" disabled={locked} />
+              <div class="line-grid">
+                <select name="kind" aria-label="Type" disabled={locked}>
+                  <option value="part" selected={l.kind === "part"}>Part</option>
+                  <option value="labour" selected={l.kind === "labour"}>Labour (h)</option>
+                </select>
+                <input type="text" name="qty" value={String(l.qty)} inputmode="decimal" aria-label="Quantity or hours" disabled={locked} />
+                <input type="text" name="unitPrice" value={l.price} inputmode="decimal" placeholder="€ net" aria-label="Unit price, net, in euros" disabled={locked} />
+                <button type="button" class="remove-line" aria-label="Remove line" disabled={locked}>×</button>
+              </div>
+            </div>
+          ))}
+          <div class="kv"><span>Net</span><span id="t-net">{formatEur(t.net)}</span></div>
+          <div class="kv"><span>VAT {vatPercentLabel}</span><span id="t-vat">{formatEur(t.vat)}</span></div>
+          <div class="kv total"><span>Total incl. VAT</span><span id="t-gross">{formatEur(t.gross)}</span></div>
+        </div>
+        {!locked && (
+          <>
+            <button type="button" id="add-line" class="link-btn">+ Add line item</button>
+            <button type="submit" class="btn">Save estimate</button>
+          </>
+        )}
+        <template id="line-template">
+          <div class="line">
+            <input type="text" name="description" placeholder="Description" aria-label="Description" />
+            <div class="line-grid">
+              <select name="kind" aria-label="Type">
+                <option value="part">Part</option>
+                <option value="labour">Labour (h)</option>
+              </select>
+              <input type="text" name="qty" value="1" inputmode="decimal" aria-label="Quantity or hours" />
+              <input type="text" name="unitPrice" inputmode="decimal" placeholder="€ net" aria-label="Unit price, net, in euros" />
+              <button type="button" class="remove-line" aria-label="Remove line">×</button>
+            </div>
+          </div>
+        </template>
+      </form>
+    </section>
+
+    <section class="section" aria-labelledby="status-h">
+      <h2 id="status-h">Status</h2>
+      <form method="POST" action={actions.setStatus} style="display:grid;grid-template-columns:1fr auto;gap:8px;">
+        <input type="hidden" name="jobId" value={job.id} />
+        <select name="status" aria-label="Job status" disabled={locked}>
+          {selectableStatuses.map((s) => <option value={s} selected={s === job.status}>{statusLabel[s]}</option>)}
+        </select>
+        <button type="submit" class="btn" style="width:auto;" disabled={locked}>Update</button>
+      </form>
+    </section>
+
+    {
+      approval && (
+        <p class="notice">
+          {approval.decision === "approved"
+            ? `Customer approved on ${approval.decidedAt!.toLocaleString("en-GB", { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" })}.`
+            : approval.decision === "declined"
+              ? "Customer tapped “Not now”. Give them a call."
+              : "Approval link sent. Waiting for the customer."}
+        </p>
+      )
+    }
+  </main>
+
+  {
+    !locked && (
+      <div
+        class="sticky-cta"
+        id="send"
+        style="padding-bottom:24px;display:flex;flex-direction:column;gap:8px;"
+        data-job={job.id}
+        data-wa={whatsappNumber(job.customerPhone)}
+        data-phone={job.customerPhone}
+        data-msg={`Hi ${firstName(job.customerName)}, this is ${business.owner} from ${business.name}. ` +
+          `Your ${job.makeModel || "car"} (${job.plate}): ${job.title}. ` +
+          `Estimate ${formatEur(t.gross)} incl. VAT. Photos and details, and approve here: `}
+      >
+        <button type="button" class="btn btn-primary" data-via="whatsapp" disabled={job.lines.length === 0}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"></path></svg>
+          Send to customer for approval
+        </button>
+        <button type="button" class="btn" data-via="sms" disabled={job.lines.length === 0}>Send by SMS instead</button>
+        <span id="send-msg" class="muted small" style="text-align:center;">
+          {job.lines.length === 0 ? "Save at least one estimate line first." : "Opens WhatsApp with the message ready to send."}
+        </span>
+      </div>
+    )
+  }
+</AppLayout>
+
+<script>
+  import { actions } from "astro:actions";
+
+  // --- Photos: shrink on the phone before upload, then submit straight away.
+  const photoForm = document.getElementById("photo-form") as HTMLFormElement | null;
+  const photoInput = document.getElementById("photo-input") as HTMLInputElement | null;
+  const photoLabel = document.getElementById("photo-label");
+  const MAX_SIDE = 1600;
+
+  async function shrink(file: File): Promise<File> {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((res, rej) =>
+      canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/jpeg", 0.82),
+    );
+    return new File([blob], "photo.jpg", { type: "image/jpeg" });
+  }
+
+  photoInput?.addEventListener("change", async () => {
+    const file = photoInput.files?.[0];
+    if (!file || !photoForm) return;
+    if (photoLabel) photoLabel.textContent = "Uploading…";
+    try {
+      const small = await shrink(file);
+      const dt = new DataTransfer();
+      dt.items.add(small);
+      photoInput.files = dt.files;
+    } catch {
+      /* send the original */
+    }
+    photoForm.submit();
+  });
+
+  // --- Voice note → findings (Web Speech API; Chrome on Android supports it).
+  const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+  const mic = document.getElementById("mic") as HTMLButtonElement | null;
+  const micLabel = document.getElementById("mic-label");
+  const findings = document.getElementById("findings") as HTMLTextAreaElement | null;
+  if (SR && mic && findings) {
+    mic.hidden = false;
+    if (micLabel) micLabel.textContent = "Voice note becomes text";
+    const rec = new SR();
+    rec.lang = navigator.language || "en-GB";
+    rec.continuous = true;
+    rec.interimResults = false;
+    let on = false;
+    const setOn = (v: boolean) => {
+      on = v;
+      mic.classList.toggle("on", v);
+      mic.setAttribute("aria-pressed", String(v));
+      if (micLabel) micLabel.textContent = v ? "Recording… tap to stop" : "Voice note becomes text";
+    };
+    rec.onresult = (e: any) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) continue;
+        const text = e.results[i][0].transcript.trim();
+        const sep = findings.value && !/\s$/.test(findings.value) ? " " : "";
+        findings.value += sep + text.charAt(0).toUpperCase() + text.slice(1) + ".";
+      }
+    };
+    rec.onend = () => setOn(false);
+    rec.onerror = () => setOn(false);
+    mic.addEventListener("click", () => {
+      if (on) rec.stop();
+      else {
+        rec.start();
+        setOn(true);
+      }
+    });
+  }
+
+  // --- Estimate lines: add/remove rows and keep the total live.
+  const estimateForm = document.getElementById("estimate-form") as HTMLFormElement | null;
+  const linesBox = document.getElementById("lines");
+  const template = document.getElementById("line-template") as HTMLTemplateElement | null;
+  const vat = Number(estimateForm?.dataset.vat ?? 0);
+  const eur = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" });
+  const num = (v: string) => Number(v.replace(",", ".")) || 0;
+
+  function recalc() {
+    if (!linesBox) return;
+    let net = 0;
+    linesBox.querySelectorAll(".line").forEach((row) => {
+      const qty = num((row.querySelector('[name="qty"]') as HTMLInputElement).value);
+      const price = num((row.querySelector('[name="unitPrice"]') as HTMLInputElement).value);
+      net += Math.round(qty * price * 100);
+    });
+    const v = Math.round(net * vat);
+    document.getElementById("t-net")!.textContent = eur.format(net / 100);
+    document.getElementById("t-vat")!.textContent = eur.format(v / 100);
+    document.getElementById("t-gross")!.textContent = eur.format((net + v) / 100);
+  }
+
+  // Unsaved estimate changes would send the customer an old total, so block sending until saved.
+  function markDirty() {
+    recalc();
+    document.querySelectorAll<HTMLButtonElement>("#send button[data-via]").forEach((b) => (b.disabled = true));
+    const msg = document.getElementById("send-msg");
+    if (msg) msg.textContent = "Save the estimate before sending it.";
+  }
+
+  linesBox?.addEventListener("input", markDirty);
+  linesBox?.addEventListener("change", markDirty);
+  linesBox?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest(".remove-line");
+    if (!btn) return;
+    btn.closest(".line")?.remove();
+    markDirty();
+  });
+  document.getElementById("add-line")?.addEventListener("click", () => {
+    if (!template || !linesBox) return;
+    const row = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    linesBox.insertBefore(row, linesBox.querySelector(".kv"));
+    (row.querySelector('[name="description"]') as HTMLInputElement).focus();
+  });
+
+  // --- Send for approval: make a fresh link, then hand off to WhatsApp or SMS.
+  const send = document.getElementById("send");
+  const sendMsg = document.getElementById("send-msg");
+  send?.addEventListener("click", async (e) => {
+    const btn = (e.target as HTMLElement).closest("button[data-via]") as HTMLButtonElement | null;
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    const { data, error } = await actions.sendForApproval({ jobId: send.dataset.job! });
+    btn.disabled = false;
+    if (error || !data) {
+      if (sendMsg) sendMsg.textContent = error?.message ?? "Couldn't create the link.";
+      return;
+    }
+    const url = `${location.origin}/a/${data.token}`;
+    const text = (send.dataset.msg ?? "") + url;
+    const href =
+      btn.dataset.via === "sms"
+        ? `sms:${send.dataset.phone ?? ""}?body=${encodeURIComponent(text)}`
+        : `https://wa.me/${send.dataset.wa ?? ""}?text=${encodeURIComponent(text)}`;
+    if (sendMsg) sendMsg.textContent = `Link: ${url}`;
+    location.href = href;
+  });
+</script>

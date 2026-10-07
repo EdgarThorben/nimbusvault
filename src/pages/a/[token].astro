@@ -1,0 +1,106 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro";
+import { actions } from "astro:actions";
+import { business } from "../../config";
+import { firstName, getJobByToken } from "../../lib/jobs";
+import { formatEur, totals, vatPercentLabel } from "../../lib/money";
+
+const { token = "" } = Astro.params;
+const found = await getJobByToken(token);
+if (!found) {
+  Astro.response.status = 404;
+  return Astro.rewrite("/404");
+}
+
+const result = Astro.getActionResult(actions.decideApproval);
+if (result && !result.error) return Astro.redirect(`/a/${token}`);
+
+const { job, approval, current } = found;
+const t = totals(job.lines);
+const decision = approval.decision;
+const callHref = `tel:+${business.phone.replace(/\D/g, "")}`;
+const hours = Math.round(t.labourHours * 100) / 100;
+Astro.response.headers.set("Cache-Control", "no-store");
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+---
+
+<AppLayout title="Approve repair" description={`${business.name}: approve your repair.`}>
+  <header class="cust-head">
+    <span class="eyebrow">{business.name}</span>
+    <h1>{job.makeModel ? `Your ${job.makeModel}: ${job.title}` : job.title}</h1>
+    <span class="sub" style="font-size:14px;">
+      {job.plate} · Hi {firstName(job.customerName)}{decision ? "." : ", please approve when you can."}
+    </span>
+  </header>
+
+  <div class="cust-body">
+    {
+      !current ? (
+        <main class="centered">
+          <h2 style="font-size:24px;">This estimate was updated</h2>
+          <p class="muted" style="margin:0;">Please open the newest link {business.owner} sent you.</p>
+          <a class="btn" href={callHref}>Call {business.owner}</a>
+        </main>
+      ) : decision === "approved" ? (
+        <main class="centered">
+          <div class="done-mark">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+          </div>
+          <h2 style="font-size:26px;font-weight:800;">Thanks, approved</h2>
+          <p style="margin:0;color:#3a3d40;">
+            {business.owner} is on it. You'll get a message when your car is ready for pickup.
+          </p>
+          <p class="muted" style="margin:0;">Approved total: {formatEur(t.gross)} incl. VAT</p>
+        </main>
+      ) : (
+        <>
+          <main class="content" style="padding-top:18px;">
+            {result?.error && <p class="error">{result.error.message}</p>}
+            {decision === "declined" && (
+              <p class="notice" style="border:1px solid #e4e0d9;">
+                You said “not now”. Changed your mind? You can still approve below.
+              </p>
+            )}
+
+            {job.photos.length > 0 && (
+              <div class="cust-photos">
+                {job.photos.map((p) => (
+                  <a href={`/p/${p.pathname}?t=${token}`}>
+                    <img src={`/p/${p.pathname}?t=${token}`} alt="Photo of your car" loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {job.findings && <p style="margin:0;font-size:16px;line-height:1.5;white-space:pre-line;">{job.findings}</p>}
+
+            <div class="panel">
+              {job.lines.map((l) => (
+                <div class="kv">
+                  <span>{l.description}{l.kind === "labour" ? ` (${l.qty} h)` : l.qty !== 1 ? ` (${l.qty}×)` : ""}</span>
+                  <span>{formatEur(Math.round(l.qty * l.unitPriceCents))}</span>
+                </div>
+              ))}
+              <div class="kv muted"><span>VAT {vatPercentLabel}</span><span>{formatEur(t.vat)}</span></div>
+              <div class="kv total" style="font-size:17px;"><span>Total incl. VAT</span><span>{formatEur(t.gross)}</span></div>
+            </div>
+            {hours > 0 && <span class="muted small">Includes {hours} h labour. Prices per line are before VAT.</span>}
+          </main>
+
+          <form method="POST" action={actions.decideApproval} style="padding:12px 20px 24px;display:flex;flex-direction:column;gap:8px;">
+            <input type="hidden" name="token" value={token} />
+            <button type="submit" name="decision" value="approved" class="btn btn-primary">Approve repair</button>
+            <div class="btn-row">
+              <a class="btn" href={callHref} style="min-height:52px;">Call {business.owner}</a>
+              {decision === "declined" ? (
+                <span class="btn" aria-disabled="true" style="opacity:.6;">Not now</span>
+              ) : (
+                <button type="submit" name="decision" value="declined" class="btn">Not now</button>
+              )}
+            </div>
+          </form>
+        </>
+      )
+    }
+  </div>
+</AppLayout>

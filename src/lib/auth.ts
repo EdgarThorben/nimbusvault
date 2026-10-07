@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { sessions, users } from "../db/schema";
 
-export const SESSION_COOKIE_NAME = "nimbusvault_session";
+export const SESSION_COOKIE_NAME = "leo_session";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 const ARGON2_OPTIONS = {
