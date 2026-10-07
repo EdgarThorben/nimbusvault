@@ -1,9 +1,9 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
 import { actions } from "astro:actions";
-import { business } from "../config";
+import { business, DEMO_LOGIN, DEMO_MODE } from "../config";
 
-const result = Astro.getActionResult(actions.login);
+const result = Astro.getActionResult(actions.login) ?? Astro.getActionResult(actions.demoLogin);
 if (Astro.locals.user || (result && !result.error)) {
   return Astro.redirect("/jobs");
 }
@@ -16,16 +16,24 @@ if (Astro.locals.user || (result && !result.error)) {
       <h1>Log in</h1>
     </div>
     {result?.error && <p class="error">{result.error.message}</p>}
+    {
+      DEMO_MODE && (
+        <form method="POST" action={actions.demoLogin} style="display:flex;flex-direction:column;gap:8px;">
+          <button type="submit" class="btn btn-primary">Enter the prototype</button>
+          <span class="muted small" style="text-align:center;">Prototype with example data. No password needed.</span>
+        </form>
+      )
+    }
     <form class="form" method="POST" action={actions.login}>
       <label class="field">
         Email
-        <input type="email" name="email" autocomplete="username" required />
+        <input type="email" name="email" autocomplete="username" required value={DEMO_MODE ? DEMO_LOGIN.email : undefined} />
       </label>
       <label class="field">
         Password
-        <input type="password" name="password" autocomplete="current-password" required />
+        <input type="password" name="password" autocomplete="current-password" required value={DEMO_MODE ? DEMO_LOGIN.password : undefined} />
       </label>
-      <button type="submit" class="btn btn-primary">Log in</button>
+      <button type="submit" class:list={["btn", { "btn-primary": !DEMO_MODE }]}>Log in</button>
     </form>
   </main>
 </AppLayout>

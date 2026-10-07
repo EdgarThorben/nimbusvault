@@ -1,4 +1,4 @@
-import { login, logout } from "./auth";
+import { demoLogin, login, logout } from "./auth";
 import {
   checkIn,
   createInvoice,
@@ -13,6 +13,7 @@ import {
 
 export const server = {
   login,
+  demoLogin,
   logout,
   checkIn,
   uploadPhoto,

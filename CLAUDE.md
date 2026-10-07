@@ -25,6 +25,10 @@ Approval (unguessable token, decision, decided_at). Invoice number/date sit on t
   `/a/*`, `/p/*` (checks its own access), static assets. Every action except `decideApproval` calls `requireLeo`.
 - **Customers see only their own job**, through `/a/[token]`. Photos for them go through `/p/...?t=token`, which
   checks the photo belongs to that token's job. Only the newest approval link per job accepts a decision.
+- **Prototype mode (2026-10-07):** `DEMO_MODE=1` (set for Preview branch `werkstatt` and in local `.env`) shows an
+  "Enter the prototype" button on `/login` that logs in as `leo@example.com` without a password. Anyone with the URL
+  gets in, so switch it off (remove the env var, redeploy) before real customer data is entered.
+  `npm run db:seed-demo` wipes and refills `leos_workshop` with example jobs; it refuses any other database.
 - Prices are stored net; VAT is applied at display/invoice time from `VAT_RATE` in `src/config.ts`.
 - Photos are private Blob objects; never switch to public URLs.
 - Business details and VAT rate are placeholders in `src/config.ts`.

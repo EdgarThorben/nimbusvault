@@ -16,9 +16,12 @@ PDF invoice. Installable on Android as a PWA.
 npm install
 cp .env.example .env          # DATABASE_URL, BLOB_READ_WRITE_TOKEN
 npm run db:migrate
-LEO_EMAIL=leo@example.com LEO_PASSWORD='choose-a-long-one' npm run db:seed
+npm run db:seed-demo           # example data + demo login leo@example.com / workshop-demo
 astro dev --background
 ```
+
+With `DEMO_MODE=1`, `/login` shows an "Enter the prototype" button that skips the password.
+Turn it off before real customers use the app.
 
 ## Screens
 

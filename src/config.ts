@@ -17,3 +17,8 @@ export const VAT_RATE = 0.19;
 
 // Country calling code used to turn a local number ("0151 ...") into a WhatsApp link.
 export const DEFAULT_COUNTRY_CODE = "49";
+
+// Prototype mode: shows a one-tap "Enter the prototype" button on /login that skips the password.
+// Anyone with the URL gets in, so keep it off once real customer data goes in.
+export const DEMO_MODE = (process.env.DEMO_MODE ?? import.meta.env?.DEMO_MODE) === "1";
+export const DEMO_LOGIN = { email: "leo@example.com", password: "workshop-demo" };

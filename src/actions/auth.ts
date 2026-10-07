@@ -3,6 +3,7 @@ import { z } from "astro:schema";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { users } from "../db/schema";
+import { DEMO_LOGIN, DEMO_MODE } from "../config";
 import { SESSION_COOKIE_NAME, createSession, deleteSession, verifyPassword } from "../lib/auth";
 
 export const login = defineAction({
@@ -27,6 +28,29 @@ export const login = defineAction({
       expires: session.expiresAt,
     });
 
+    return { displayName: user.displayName };
+  },
+});
+
+/** Prototype only: logs in as the demo account without a password. Disabled unless DEMO_MODE=1. */
+export const demoLogin = defineAction({
+  accept: "form",
+  handler: async (_input, context) => {
+    if (!DEMO_MODE) {
+      throw new ActionError({ code: "NOT_FOUND", message: "Demo login is switched off." });
+    }
+    const [user] = await db.select().from(users).where(eq(users.email, DEMO_LOGIN.email)).limit(1);
+    if (!user) {
+      throw new ActionError({ code: "NOT_FOUND", message: "Demo account missing. Run `npm run db:seed-demo`." });
+    }
+    const session = await createSession(user.id);
+    context.cookies.set(SESSION_COOKIE_NAME, session.id, {
+      httpOnly: true,
+      secure: import.meta.env.PROD,
+      sameSite: "lax",
+      path: "/",
+      expires: session.expiresAt,
+    });
     return { displayName: user.displayName };
   },
 });
